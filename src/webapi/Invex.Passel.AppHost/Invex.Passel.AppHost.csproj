@@ -22,6 +22,9 @@
         <PackageReference Include="Aspire.Hosting.JavaScript" />
         <PackageReference Include="Aspire.Hosting.PostgreSQL" />
         <PackageReference Include="Azure.ResourceManager.AppContainers" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+        <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+        <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     </ItemGroup>
 
     <ItemGroup>
