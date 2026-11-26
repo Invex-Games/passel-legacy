@@ -117,17 +117,25 @@ describe("the web image's security policies", () => {
     });
 });
 
-describe("the privacy policy and terms drafts", () => {
-    const legal = ["privacy/index.html", "terms/index.html"];
-
-    it.each(legal)("%s says it is a draft pending legal review and keeps out of search engines", name => {
-        const html = page(name);
+describe("the privacy policy and terms", () => {
+    // The privacy policy is published (November 2026); the terms are still a draft
+    it("the terms say they are a draft pending legal review and keep out of search engines", () => {
+        const html = page("terms/index.html");
 
         expect(visibleText(html)).toContain("Draft, pending legal review.");
         expect(html).toContain('<meta name="robots" content="noindex">');
     });
 
-    it.each(legal)("%s marks every fact still to be supplied as a placeholder", name => {
+    it("the privacy policy is published: no draft notice, no noindex, nothing left to fill in", () => {
+        const html = page("privacy/index.html");
+
+        expect(visibleText(html)).not.toContain("Draft");
+        expect(html).not.toContain("noindex");
+        expect(html.replace(/<!--[\s\S]*?-->/g, "")).not.toMatch(/placeholder|\[[A-Z][^\]]*\]/);
+    });
+
+    it("the terms mark every fact still to be supplied as a placeholder", () => {
+        const name = "terms/index.html";
         const html = page(name).replace(/<!--[\s\S]*?-->/g, "");
         const bracketed = [...html.matchAll(/\[[A-Z][^\]]*\]/g)].map(match => match.index);
         const marked = [...html.matchAll(/<span class="placeholder">\s*\[[A-Z][^\]]*\]\s*<\/span>/g)].length;
