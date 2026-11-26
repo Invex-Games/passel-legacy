@@ -10,7 +10,7 @@ The pieces already in place:
 - **Live updates** (`PacketStoreService.NotifyAsync`, then `pg_notify` and `PacketNotificationListener`): every API instance listens, and each publishes only to users with an event stream open on that instance (`hub.HasSubscribers`). The stream lives only while a client is visible, so a phone in a pocket hears nothing.
 - **Background work after a create** (`LinkPreviewQueue` and `LinkPreviewWorker`): a bounded in-process queue that the store service fills after the commit and a worker drains. A preview lost to a restart is simply never fetched.
 - **Packets don't say where they came from.** `POST /api/packets` takes the content only, so "the user's other devices" can't leave out the sender.
-- **The app** signs in with Google and sends the ID token as its bearer token, an hour at a time. There are no first-party sessions yet (1.B1). Two flavors: `com.invex.passel.mobileapp` and `com.invex.passel.mobileapp.dev`. Flutter is pinned at 3.41.0 in `_atom/appsettings.json`.
+- **The app** signs in with Google and sends the ID token as its bearer token, an hour at a time. There are no first-party sessions yet (1.B1). Two flavors: `com.invex.passel.mobileapp` and `com.invex.passel.mobileapp.dev`. Flutter is pinned at 3.50.1 in `_atom/appsettings.json`.
 - **The repository is public**, and production is Docker Compose on the owner's server, with its values in the server's `.env` (ADR 0004).
 
 ## Options

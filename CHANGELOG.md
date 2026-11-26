@@ -6,7 +6,11 @@ All notable changes to Passel. The format follows [Keep a Changelog](https://kee
 
 ### Security
 
-- Aspire 13.6.5, which fixes CVE-2026-118740 in the dashboard and CVE-2026-120006 in the AppHost; with 13.6.2 the AppHost no longer restored, since the build treats a vulnerable package as an error. The other NuGet packages move to their newest versions within their major versions (Marten 9.63 needs no schema change), and the npm and pub lock files to the newest versions their ranges allow. Held back: the new majors (Aspire 17, the .NET 11 packages, Atom 5, SkiaSharp 4, Scalar 3, jsdom 31, `@types/chrome` 0.3, `dynamic_color` 2) and `flutter_riverpod` 3.5, which needs a newer Flutter than the 3.41 the build pins.
+- Aspire 13.6.5, which fixes CVE-2026-118740 in the dashboard and CVE-2026-120006 in the AppHost; with 13.6.2 the AppHost no longer restored, since the build treats a vulnerable package as an error. The other NuGet packages move to their newest versions within their major versions (Marten 9.63 needs no schema change), and the npm and pub lock files to the newest versions their ranges allow. Held back: the new majors (Aspire 17, the .NET 11 packages, Atom 5, SkiaSharp 4, Scalar 3, jsdom 31, `@types/chrome` 0.3, `dynamic_color` 2); `flutter_riverpod` 3.5, which needed a newer Flutter than 3.41, came with the move to Flutter 3.50 under Changed.
+
+### Changed
+
+- The mobile app builds with Flutter 3.50.1 (Dart 3.14), pinned in `_atom/appsettings.json`, since the current Firebase and local notification packages that push notifications need ask for Flutter 3.44 or later. Flutter 3.50 refuses to build with Gradle older than 9.3.1, AGP older than 9.1.1 or Kotlin older than 2.4.10, so the Android build moves to Gradle 9.5, AGP 9.3.1 and Kotlin 2.4.20 and compiles its Kotlin with AGP's built-in Kotlin, which `dynamic_color` 1.9 supports and 1.8 did not; AGP 9 no longer allows `resValue` by default, so the app turns it back on for the flavor names. `flutter_riverpod` moves to 3.5 and the pub lock file to the newest versions the ranges allow.
 
 ### Fixed
 
