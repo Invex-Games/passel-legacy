@@ -12,6 +12,12 @@ public static partial class PacketEndpoints
     [JsonDerivedType(typeof(File), typeDiscriminator: nameof(File))]
     public partial record PostPacketRequestBody
     {
+        /// <summary>
+        ///     The id of the caller's own device the packet is sent from, as <c>POST /api/devices</c> answered it, or
+        ///     <c>null</c>. The device is not notified of its own packet.
+        /// </summary>
+        public string? DeviceId { get; init; }
+
         [PublicAPI]
         public sealed partial record Link
         {
@@ -65,9 +71,19 @@ public static partial class PacketEndpoints
 
     internal const string NoSuchParcelMessage = "ParcelId must be the id of a file you uploaded.";
 
+    /// <summary>
+    ///     One answer for an id that is malformed, names no device, or names another user's, so device ids can't be
+    ///     probed.
+    /// </summary>
+    internal const string NoSuchDeviceMessage = "DeviceId must be the id of one of your devices.";
+
     internal static Dictionary<string, string[]> Validate(PostPacketRequestBody packet)
     {
         var errors = new Dictionary<string, string[]>();
+
+        // The same bound as a parcel id: longer than any id the API hands out
+        if (packet.DeviceId is { Length: 0 or > MaxParcelIdLength })
+            errors["deviceId"] = [NoSuchDeviceMessage];
 
         switch (packet)
         {
@@ -131,6 +147,7 @@ public static partial class PacketEndpoints
                     IIdEncodingService encodingService,
                     IPacketStoreService packetStoreService,
                     IPacketQuotaService quotaService,
+                    IQuerySession querySession,
                     IOptions<QuotaOptions> quotas) =>
                 {
                     var ownerId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -153,6 +170,21 @@ public static partial class PacketEndpoints
                             ["parcelId"] = [NoSuchParcelMessage],
                         });
 
+                    Guid? sourceDeviceId = null;
+
+                    if (packet.DeviceId is { } encodedDeviceId)
+                    {
+                        if (!encodingService.TryDecode(encodedDeviceId, out var deviceId) ||
+                            await querySession.LoadAsync<Device>(deviceId, httpContext.RequestAborted) is not { } device ||
+                            device.UserId != ownerId)
+                            return Results.ValidationProblem(new Dictionary<string, string[]>
+                            {
+                                ["deviceId"] = [NoSuchDeviceMessage],
+                            });
+
+                        sourceDeviceId = deviceId;
+                    }
+
                     var usage = await quotaService.GetUsageAsync(ownerId, httpContext.RequestAborted);
 
                     if (PacketQuota.Exceeded(usage, ContentBytes(packet), quotas.Value) is { } exceeded)
@@ -168,6 +200,7 @@ public static partial class PacketEndpoints
                             UserId = ownerId,
                             ParcelId = parcelId,
                             FileName = ParcelFileName.Sanitize(file.FileName),
+                            SourceDeviceId = sourceDeviceId,
                         });
 
                         return result switch
@@ -195,12 +228,14 @@ public static partial class PacketEndpoints
                             UserId = ownerId,
                             Title = text.Title,
                             Body = text.Body,
+                            SourceDeviceId = sourceDeviceId,
                         }),
                         PostPacketRequestBody.Link link => await packetStoreService.Handle(new CreateLinkPacket
                         {
                             UserId = ownerId,
                             Title = link.Name,
                             Url = link.Url,
+                            SourceDeviceId = sourceDeviceId,
                         }),
                         _ => throw new UnreachableException(),
                     };

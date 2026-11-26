@@ -168,4 +168,34 @@ public sealed class PostPacketTests
                 ParcelId = "qrjMmYBVnK8m3coMo0hiMeN",
             }));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("qrjMmYBVnK8m3coMo0hiMeN")]
+    public void Validate_accepts_a_packet_with_or_without_a_device_id(string? deviceId)
+    {
+        var errors = PacketEndpoints.Validate(new PacketEndpoints.PostPacketRequestBody.Text
+        {
+            Title = null,
+            Body = "hello",
+            DeviceId = deviceId,
+        });
+
+        Assert.Empty(errors);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public void Validate_rejects_an_empty_or_overlong_device_id_like_any_unknown_one(string deviceId)
+    {
+        var errors = PacketEndpoints.Validate(new PacketEndpoints.PostPacketRequestBody.Link
+        {
+            Name = null,
+            Url = "https://example.com",
+            DeviceId = deviceId,
+        });
+
+        Assert.Equal([PacketEndpoints.NoSuchDeviceMessage], errors["deviceId"]);
+    }
 }

@@ -154,8 +154,8 @@ internal static class PacketApi
         return PacketJson.Parse(document.RootElement);
     }
 
-    private static async Task<PacketJson> CreateAsync(
-        HttpClient client,
+    public static async Task<PacketJson> CreateAsync(
+        this HttpClient client,
         JsonObject packet,
         CancellationToken cancellationToken)
     {

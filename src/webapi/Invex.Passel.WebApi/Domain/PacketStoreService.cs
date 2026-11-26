@@ -53,7 +53,7 @@ internal interface IPacketStoreService
 /// <summary>
 ///     Writes packets as documents: one upsert to create, one delete to remove, one update to attach a link's
 ///     preview, and a notification after each commit for the live streams. A link's page is queued for fetching
-///     once the link is committed. A File packet and its parcel change together: creating the packet attaches the
+///     once the link is committed, and every new packet for the push sender. A File packet and its parcel change together: creating the packet attaches the
 ///     parcel and deleting it marks the parcel deleted, each in the packet's own commit, with the parcel's version
 ///     checked so that a racing writer on the parcel (another send, a discard, the sweep) makes this one lose rather
 ///     than be overwritten. No bytes are touched here; the sweep erases them.
@@ -62,12 +62,14 @@ internal sealed partial class PacketStoreService(
     IDocumentSession session,
     NpgsqlDataSource dataSource,
     ILinkPreviewQueue previewQueue,
+    IPushQueue pushQueue,
     TimeProvider time,
     IParcelSweepSignal sweep,
     ILogger<PacketStoreService> logger) : IPacketStoreService
 {
     public Task<Packet> Handle(CreateTextPacket command) =>
         StoreAsync(command.UserId,
+            command.SourceDeviceId,
             new PacketContent.Text
             {
                 Title = command.Title,
@@ -77,6 +79,7 @@ internal sealed partial class PacketStoreService(
     public async Task<Packet> Handle(CreateLinkPacket command)
     {
         var packet = await StoreAsync(command.UserId,
+            command.SourceDeviceId,
             new PacketContent.Link
             {
                 Name = command.Title,
@@ -99,6 +102,7 @@ internal sealed partial class PacketStoreService(
             return refused;
 
         var packet = NewPacket(command.UserId,
+            command.SourceDeviceId,
             new PacketContent.File
             {
                 FileName = command.FileName ?? parcel!.FileName,
@@ -133,6 +137,7 @@ internal sealed partial class PacketStoreService(
         }
 
         await NotifyAsync(new(command.UserId, packet.Id));
+        EnqueuePush(command.UserId, packet.Id);
 
         return new CreateFilePacketResult.Created(packet);
     }
@@ -202,6 +207,7 @@ internal sealed partial class PacketStoreService(
             Id = packet.Id,
             UserId = packet.UserId,
             CreatedAt = packet.CreatedAt,
+            SourceDeviceId = packet.SourceDeviceId,
             Content = link with
             {
                 Preview = command.Preview,
@@ -226,7 +232,7 @@ internal sealed partial class PacketStoreService(
         return true;
     }
 
-    private Packet NewPacket(string userId, PacketContent content) =>
+    private Packet NewPacket(string userId, Guid? sourceDeviceId, PacketContent content) =>
         new()
         {
             // Version 7, so ids order packets by creation; the feed pages on them
@@ -234,6 +240,7 @@ internal sealed partial class PacketStoreService(
             UserId = userId,
             CreatedAt = time.GetUtcNow(),
             Content = content,
+            SourceDeviceId = sourceDeviceId,
         };
 
     /// <summary>
@@ -251,17 +258,24 @@ internal sealed partial class PacketStoreService(
         return null;
     }
 
-    private async Task<Packet> StoreAsync(string userId, PacketContent content)
+    private async Task<Packet> StoreAsync(string userId, Guid? sourceDeviceId, PacketContent content)
     {
-        var packet = NewPacket(userId, content);
+        var packet = NewPacket(userId, sourceDeviceId, content);
 
         session.Store(packet);
 
         await session.SaveChangesAsync();
         await NotifyAsync(new(userId, packet.Id));
+        EnqueuePush(userId, packet.Id);
 
         return packet;
     }
+
+    // After the commit, like the preview fetch, so a rolled-back packet never notifies anyone. Only this instance
+    // queues it, so the user's phones hear of the packet once however many instances listen. The queue says no when
+    // push is off or it is full; the packet is stored all the same and only the notification is lost
+    private void EnqueuePush(string userId, Guid packetId) =>
+        pushQueue.TryEnqueue(new(userId, packetId));
 
     // Sent once the change is committed, so it never announces one that was rolled back. It can't be queued in the
     // session: Marten reads its batch's results positionally and would hand the pg_notify result to the next

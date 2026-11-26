@@ -37,7 +37,7 @@ builder
     .AddSingleton<IPacketEventHub, PacketEventHub>()
     .AddHostedService<PacketNotificationListener>();
 
-// The device registry: what the push sender (roadmap 2.B1) will deliver to, and what sessions (1.B1) will belong to.
+// The device registry: what the push sender delivers to, and what sessions (1.B1) will belong to.
 // A write that kept losing races is a 409, not a 500
 builder
     .Services
@@ -55,6 +55,10 @@ builder
     .AddSingleton<LinkPreviewQueue>()
     .AddSingleton<ILinkPreviewQueue>(services => services.GetRequiredService<LinkPreviewQueue>())
     .AddHostedService<LinkPreviewWorker>();
+
+// Push notifications: a new packet is sent through FCM to the user's other Android devices, after the commit and in
+// the background, once Push:Fcm is configured
+builder.AddPasselPush();
 
 var app = builder.Build();
 

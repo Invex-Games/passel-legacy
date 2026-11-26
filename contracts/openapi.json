@@ -35,19 +35,22 @@
                 "Link": {
                   "value": {
                     "name": "Packet name",
-                    "url": "https://example.com"
+                    "url": "https://example.com",
+                    "deviceId": null
                   }
                 },
                 "Text": {
                   "value": {
                     "title": "Packet title",
-                    "body": "Packet body"
+                    "body": "Packet body",
+                    "deviceId": null
                   }
                 },
                 "File": {
                   "value": {
                     "parcelId": "qrjMmYBVnK8m3coMo0hiMeN",
-                    "fileName": "screenshot.png"
+                    "fileName": "screenshot.png",
+                    "deviceId": null
                   }
                 }
               }
@@ -1429,6 +1432,13 @@
               "string"
             ],
             "description": "The name to send the file under, or `null` to keep the one it was uploaded with."
+          },
+          "deviceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The id of the caller's own device the packet is sent from, as `POST /api/devices` answered it, or\n`null`. The device is not notified of its own packet."
           }
         },
         "description": "Sends a file uploaded to `POST /api/parcels`. Its type and whether it is an image come from the\nupload; only its name may be changed."
@@ -1453,6 +1463,13 @@
           },
           "url": {
             "type": "string"
+          },
+          "deviceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The id of the caller's own device the packet is sent from, as `POST /api/devices` answered it, or\n`null`. The device is not notified of its own packet."
           }
         }
       },
@@ -1476,6 +1493,13 @@
           },
           "body": {
             "type": "string"
+          },
+          "deviceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The id of the caller's own device the packet is sent from, as `POST /api/devices` answered it, or\n`null`. The device is not notified of its own packet."
           }
         }
       },
