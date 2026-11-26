@@ -13,4 +13,13 @@
         <PackageReference Include="Invex.RepoUtils.Atom.Module" />
         <PackageReference Include="Microsoft.Extensions.Hosting" />
     </ItemGroup>
+
+    <!--
+        The GitVersion module runs `dotnet gitversion` and installs GitVersion.Tool only when no manifest lists it, so
+        the version pinned in dotnet-tools.json (6.x; 7 dropped the `/output json` Atom 3.7 calls) has to be restored
+        before the build runs. The generated workflows only `dotnet run` this project, which builds it first.
+    -->
+    <Target Name="RestoreRepositoryTools" BeforeTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+        <Exec Command="dotnet tool restore" WorkingDirectory="$(MSBuildThisFileDirectory).." StandardOutputImportance="low" />
+    </Target>
 </Project>

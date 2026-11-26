@@ -10,7 +10,7 @@ All notable changes to Passel. The format follows [Keep a Changelog](https://kee
 
 ### Fixed
 
-- Every build target failed at startup since GitVersion 7, which the build installed on demand, dropped the `/output json` syntax that Atom 3.7 calls; `dotnet-tools.json` now pins GitVersion 6.8.2.
+- Every build target failed at startup since GitVersion 7, which the build installed on demand, dropped the `/output json` syntax that Atom 3.7 calls; `dotnet-tools.json` now pins GitVersion 6.8.2, and building `_atom` runs `dotnet tool restore` so the pinned version is there in CI too.
 
 ### Added
 
