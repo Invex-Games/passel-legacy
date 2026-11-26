@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// [text] clamped to [maxLines], with a "Show more" button that expands it
 /// in place (and "Show less" to clamp it again).

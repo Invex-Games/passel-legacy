@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Wraps a child widget with a staggered fade + slide entrance animation.
 class AnimatedTileWrapper extends StatefulWidget {

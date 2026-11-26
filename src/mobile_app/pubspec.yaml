@@ -19,12 +19,15 @@ dependencies:
   url_launcher: ^6.3.1
   google_sign_in: ^7.2.0
   custom_refresh_indicator: ^4.0.1
-  # 1.9 is the first version on AGP 9 built-in Kotlin (1.8 still applies the
-  # Kotlin Gradle Plugin); 2.x is a new major, to be taken on its own.
-  dynamic_color: ^1.9.0
+  # 2.x hands over material_ui color schemes; 1.x still uses the SDK's
+  # deprecated package:flutter/material.dart types.
+  dynamic_color: ^2.1.0
   share_plus: ^13.3.1
   shared_preferences: ^2.3.0
   package_info_plus: ^10.2.2
+  # Material, moved out of the Flutter SDK; package:flutter/material.dart is
+  # deprecated since Flutter 3.47.
+  material_ui: ^1.11.1
 
 dev_dependencies:
   flutter_test:
