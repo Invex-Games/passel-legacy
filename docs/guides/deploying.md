@@ -12,7 +12,7 @@ The Azure deployment of [ADR 0003](../decisions/0003-hosting-on-azure.md) is sti
 > - The images become public and multi-arch, with a moving `stable` tag, so the private packages of step 8 and the `linux/amd64` requirement go.
 > - One `PUBLIC_URL` and one origin replace `API_HOST` and `WEB_HOST`.
 > - Sign-in goes through the central OAuth project, so step 9's Google origins are needed only for a web client of your own.
-> - Deploys become automatic: to pre-prod from `main`, and to production from tags with approval. Both deploy by digest, with the runner reaching the gate over Tailscale ([ADR 0006](../decisions/0006-open-source-self-hosting.md#decided-by-the-owner)).
+> - Deploys run from GitHub Actions: production from tags with approval, and pre-prod from `main`. Pre-prod deploys automatically only from a server of its own. While it shares this one, its deploys keep production's approval, for the reason given in [Pre-prod and production on one server](#pre-prod-and-production-on-one-server). Both deploy by digest, with the runner reaching the gate over Tailscale ([ADR 0006](../decisions/0006-open-source-self-hosting.md#decided-by-the-owner)).
 
 ### Versions and tags
 

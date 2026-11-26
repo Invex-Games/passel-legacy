@@ -17,7 +17,7 @@ On Windows the generator writes CRLF line endings, so after an interactive run g
 A newer run of `Validate` or `Build` on the same branch cancels the one still in progress; `DeployCompose` and `Deploy` runs queue instead. Every job checks the repository out and sets up the .NET 10 SDK; Node and Docker come with the runner (`TestWebApi` starts PostgreSQL and Azurite in containers for the integration tests), and `TestMobileApp` installs the Flutter version pinned in `_atom/appsettings.json` into `.flutter/` because runners don't have one.
 
 > [!NOTE]
-> [ADR 0006](../decisions/0006-open-source-self-hosting.md#repository-and-docs) adds a release workflow (signed APKs, the extension zip, the compose bundle and multi-arch images on a GitHub Release). Workflows on forks run without secrets, and the deploys become automatic: pre-prod from `main`, and production from tags with approval. The runner reaches the server over Tailscale.
+> [ADR 0006](../decisions/0006-open-source-self-hosting.md#repository-and-docs) adds a release workflow (signed APKs, the extension zip, the compose bundle and multi-arch images on a GitHub Release). Workflows on forks run without secrets, and the deploys run from GitHub Actions: production from tags with approval, and pre-prod from `main`, automatically only once pre-prod has a server of its own. The runner reaches the server over Tailscale.
 
 The mobile app's release build (`BuildMobileAppAndroid`) is not in a workflow yet: it needs the Android keystore and client ids from Azure Key Vault, so the repository first needs an Azure identity with access to the vault.
 

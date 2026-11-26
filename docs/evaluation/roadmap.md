@@ -125,7 +125,7 @@ Goal: anyone can run Passel on their own server and install one app and one exte
 | S4.A2 | A | A release workflow: a GitHub Release with the compose bundle, the `.env` generator, the Caddy overlay, the extension zip and the signed APKs. The deploy workflows stay apart from it | M | S4.A1 | `_atom/`, `.github/`, `deploy/` | ADR 0006 |
 | S4.A3 | A | Docs: the self-hosting guide as the front door, gaia as its worked example, and the developer docs apart. The pages flagged with ADR 0006 notes are brought up to date | M | S4.A1 | `docs/`, `index.md` | ADR 0006 |
 | S4.A4 | A | The public-repository checks: a gitleaks scan of the history, and the licences of Atom on public NuGet. Then the move to AGPL-3.0: `LICENSE`, and every license field and notice that says MIT | S | | root files, package manifests | ADR 0006 |
-| S4.A5 | A | Deploying the owner's stacks: pre-prod from `main` and production from tags with approval, by digest. The runner joins the tailnet as a short-lived `tag:ci` node that reaches only port 22 on gaia, where the existing forced-command gate takes over | S to M | S4.A1 | `_atom/`, `.github/`, gaia, the tailnet's access rules | ADR 0006 |
+| S4.A5 | A | Deploying the owner's stacks by digest. Production deploys from tags with approval. Pre-prod deploys from `main`, with production's approval while it shares gaia, and automatically once it has a host or VM of its own. The runner joins the tailnet as a short-lived `tag:ci` node that reaches only port 22 on gaia, where the existing forced-command gate takes over | S to M | S4.A1 | `_atom/`, `.github/`, gaia, the tailnet's access rules | ADR 0006 |
 
 ### S5: release channels
 
