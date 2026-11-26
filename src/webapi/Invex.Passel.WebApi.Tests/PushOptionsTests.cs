@@ -98,7 +98,7 @@ public sealed class PushOptionsTests : IDisposable
 
     [Theory]
     [InlineData("Passel")]
-    [InlineData("short")]
+    [InlineData("-passel")]
     [InlineData("passel-test/../../other")]
     [InlineData("passel test")]
     [InlineData("passel-test-")]
@@ -109,4 +109,11 @@ public sealed class PushOptionsTests : IDisposable
         Assert.True(result.Failed);
         Assert.Contains("is not a Google Cloud project id", result.FailureMessage);
     }
+
+    [Theory]
+    [InlineData("passel-12345")]
+    [InlineData("123456789012")]
+    [InlineData("example.com:passel")]
+    public void A_project_id_number_or_domain_scoped_id_passes(string projectId) =>
+        Assert.True(Validate(projectId, KeyFile(TestServiceAccount.Json())).Succeeded);
 }

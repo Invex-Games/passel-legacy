@@ -7,8 +7,8 @@
 # passel-deploy image of the same tag, so the compose files always match the images. The server's settings are in
 # <root>/.env. In order it:
 #
-#   0. checks, when COMPOSE_FILE adds compose.push.yaml, that FCM_PROJECT_ID is set and the FCM key is there and
-#      readable by the API's user,
+#   0. checks, when COMPOSE_FILE adds compose.push.yaml, that FCM_PROJECT_ID is set and the FCM key is there, and
+#      warns when its owner and mode look wrong for the API's user,
 #   1. pulls the images (Passel's own only when missing, since a version tag never moves; the others too with
 #      --no-migrate, and a cached one is used when its registry can't be reached),
 #   2. starts PostgreSQL and waits for it to be healthy,
@@ -83,9 +83,11 @@ env_value() {
 }
 
 # With compose.push.yaml the API needs the service account key the overlay mounts, and compose would only say so once
-# it starts the API. Checked here, before anything runs: the file compose will use (FCM_CREDENTIAL_FILE, relative to
-# the release directory like the compose files, or <root>/fcm-credential.json, which the overlay defaults to) must be there and readable
-# by 1654, the API's user. The deploy user usually can't read it, so its owner and mode are what is checked
+# it starts the API. Checked here, before anything runs: FCM_PROJECT_ID must be set, and the file compose will use
+# (FCM_CREDENTIAL_FILE, relative to the release directory like the compose files, or <root>/fcm-credential.json,
+# which the overlay defaults to) must be there. The deploy user usually can't read the key, so whether 1654, the API's
+# user, can is judged from its owner and mode, and only warned about: with user namespaces or ACLs that judgement can
+# be wrong, and the API refuses to start, saying why, when it really can't read the key
 check_push_credential() {
     local compose_files file credential owner group mode uses_push=false
     local -a files
@@ -120,7 +122,7 @@ check_push_credential() {
     if ! { { [ "$owner" = 1654 ] && ((mode & 8#400)); } ||
         { [ "$group" = 1654 ] && ((mode & 8#040)); } ||
         ((mode & 8#004)); }; then
-        die "the API's user (1654) can't read $credential; give it to 1654 with chown 1654:1654 and chmod 400"
+        echo "deploy.sh: warning: the API's user (1654) may not be able to read $credential; give it to 1654 with chown 1654:1654 and chmod 400" >&2
     fi
 }
 

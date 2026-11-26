@@ -148,7 +148,7 @@ public sealed class PushTests(PasselApiFixture fixture) : IAsyncLifetime
         // Without a source device: both Android devices with a token, the link's host and nothing else of it
         await alice.CreateLinkAsync("Private name", "https://www.example.com/private/path?q=1", CancellationToken);
 
-        var sends = await _fcm.SendsUntilSilenceAsync(Silence, CancellationToken);
+        var sends = await SendsAsync(2);
 
         Assert.Equal(new[] { phoneToken, tabletToken }.Order(), sends.Select(s => s.Token).Order());
 
@@ -230,12 +230,11 @@ public sealed class PushTests(PasselApiFixture fixture) : IAsyncLifetime
 
         await alice.CreateTextAsync(null, "hello", CancellationToken);
 
-        var first = await _fcm.NextSendAsync(Arrival, CancellationToken);
-        var more = await _fcm.SendsUntilSilenceAsync(TimeSpan.FromSeconds(3), CancellationToken);
+        // Push:MaxAttempts is 2, and nothing else retries (see the next test). Watched for longer than the default
+        // resilience handler's first backoff, which would have sent a third
+        var sends = await SendsAsync(2, TimeSpan.FromSeconds(3));
 
-        // Push:MaxAttempts is 2, and the worker is the only layer that retries: the client's default resilience
-        // handler would add retries of its own
-        Assert.Equal([token, token], new[] { first }.Concat(more).Select(s => s.Token));
+        Assert.All(sends, s => Assert.Equal(token, s.Token));
         Assert.NotNull((await alice.ListedAsync(phone.Id, CancellationToken)).PushUpdatedAt);
     }
 
@@ -261,10 +260,8 @@ public sealed class PushTests(PasselApiFixture fixture) : IAsyncLifetime
 
         await alice.CreateTextAsync(null, "first", CancellationToken);
 
-        var firstSends = new[]
-        {
-            await _fcm.NextSendAsync(Arrival, CancellationToken),
-        }.Concat(await _fcm.SendsUntilSilenceAsync(Silence, CancellationToken)).ToList();
+        // The phone registered first, so its message goes first; the held one then waits
+        var firstSends = await SendsAsync(2);
 
         var second = await alice.CreateTextAsync(null, "second", CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, await alice.DeletePacketAsync(second.Id, CancellationToken));
@@ -272,11 +269,65 @@ public sealed class PushTests(PasselApiFixture fixture) : IAsyncLifetime
         release.SetResult();
 
         var third = await alice.CreateTextAsync(null, "third", CancellationToken);
-        var later = await _fcm.SendsUntilSilenceAsync(TimeSpan.FromSeconds(2), CancellationToken);
+        var later = await SendsAsync(2);
 
-        Assert.Contains(firstSends, s => s.Token == heldToken);
+        Assert.Equal([token, heldToken], firstSends.Select(s => s.Token));
         Assert.All(later, s => Assert.Equal(third.Id, s.Body["message"]!["data"]!["packetId"]!.GetValue<string>()));
         Assert.Equal(new[] { heldToken, token }.Order(), later.Select(s => s.Token).Order());
+    }
+
+    [Fact]
+    public void The_fcm_client_has_no_resilience_handler_so_the_worker_alone_retries()
+    {
+        var handlers = _api.Services.GetRequiredService<IHttpMessageHandlerFactory>();
+
+        Assert.DoesNotContain(Chain(handlers.CreateHandler(nameof(IFcmSender))), IsResilienceHandler);
+
+        // Any other client keeps the default one, so the walk does find it where it is
+        Assert.Contains(Chain(handlers.CreateHandler("some-other-client")), IsResilienceHandler);
+
+        static IEnumerable<HttpMessageHandler> Chain(HttpMessageHandler handler)
+        {
+            for (HttpMessageHandler? current = handler; current is not null; current = (current as DelegatingHandler)?.InnerHandler)
+                yield return current;
+        }
+
+        static bool IsResilienceHandler(HttpMessageHandler handler) =>
+            handler.GetType().Name == "ResilienceHandler";
+    }
+
+    [Theory]
+    [InlineData("Push:Fcm:ProjectId", TestServiceAccount.ProjectId, "ProjectId is set and CredentialFile is not")]
+    [InlineData("Push:Fcm:CredentialFile", "KEY", "CredentialFile is set and ProjectId is not")]
+    public async Task A_host_with_one_push_setting_does_not_start(string key, string value, string message)
+    {
+        var connectionString = await fixture.CreateEmptyDatabaseAsync($"passel_push_half_{Guid.NewGuid():N}", CancellationToken);
+
+        await using var api = new PasselApiFactory(connectionString,
+            settings: new Dictionary<string, string?>
+            {
+                [key] = value == "KEY" ? _keyFile : value,
+            });
+
+        var refused = Assert.ThrowsAny<Exception>(() => api.CreateClient());
+
+        Assert.Contains(message, refused.ToString());
+    }
+
+    /// <summary>
+    ///     The next <paramref name="count" /> sends, each awaited for as long as one may take to come, and then
+    ///     nothing more for <paramref name="silence" /> (by default <see cref="Silence" />).
+    /// </summary>
+    private async Task<IReadOnlyList<FakeFcmServer.SendRequest>> SendsAsync(int count, TimeSpan? silence = null)
+    {
+        var sends = new List<FakeFcmServer.SendRequest>();
+
+        for (var i = 0; i < count; i++)
+            sends.Add(await _fcm.NextSendAsync(Arrival, CancellationToken));
+
+        Assert.Empty(await _fcm.SendsUntilSilenceAsync(silence ?? Silence, CancellationToken));
+
+        return sends;
     }
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition)

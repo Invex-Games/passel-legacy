@@ -27,10 +27,11 @@ internal sealed partial class PushOptionsValidator : IValidateOptions<PushOption
 
         var failures = new List<string>();
 
-        // It goes into the FCM URL's path, so nothing but what Google allows in a project id
+        // It goes into the FCM URL's path (escaped there in any case), so nothing but what a Google Cloud project id,
+        // an older domain-scoped one (example.com:project) or a project number can hold
         if (!ProjectIdPattern().IsMatch(fcm.ProjectId!))
-            failures.Add($"Push:Fcm:ProjectId '{fcm.ProjectId}' is not a Google Cloud project id: 6 to 30 lower-case " +
-                         "letters, digits and hyphens, starting with a letter.");
+            failures.Add($"Push:Fcm:ProjectId '{fcm.ProjectId}' is not a Google Cloud project id: lower-case letters, " +
+                         "digits and hyphens (with a domain and a colon in front for an older project), or the project number.");
 
         if (CredentialProblem(fcm.CredentialFile!) is { } problem)
             failures.Add(problem);
@@ -68,6 +69,6 @@ internal sealed partial class PushOptionsValidator : IValidateOptions<PushOption
         }
     }
 
-    [GeneratedRegex("^[a-z][a-z0-9-]{4,28}[a-z0-9]$", RegexOptions.CultureInvariant, 1000)]
+    [GeneratedRegex(@"^(?:[a-z0-9][a-z0-9.-]{0,61}[a-z0-9]:)?[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ProjectIdPattern();
 }
