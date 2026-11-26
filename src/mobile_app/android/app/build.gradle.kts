@@ -1,10 +1,8 @@
 import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     id("com.android.application")
-    id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -62,6 +60,11 @@ android {
                         "productionRelease builds WILL fail. developmentRelease will use debug keys."
             )
         }
+    }
+
+    // AGP 9 turns resValue off by default; the flavors below use it for the app and share sheet names.
+    buildFeatures {
+        resValues = true
     }
 
     flavorDimensions += "environment"
@@ -125,9 +128,9 @@ flutter {
     source = "../.."
 }
 
-tasks.withType<KotlinCompile> {
+kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
