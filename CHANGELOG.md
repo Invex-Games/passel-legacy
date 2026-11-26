@@ -4,6 +4,14 @@ All notable changes to Passel. The format follows [Keep a Changelog](https://kee
 
 ## Unreleased
 
+### Security
+
+- Aspire 13.6.5, which fixes CVE-2026-118740 in the dashboard and CVE-2026-120006 in the AppHost; with 13.6.2 the AppHost no longer restored, since the build treats a vulnerable package as an error. The other NuGet packages move to their newest versions within their major versions (Marten 9.63 needs no schema change), and the npm and pub lock files to the newest versions their ranges allow. Held back: the new majors (Aspire 17, the .NET 11 packages, Atom 5, SkiaSharp 4, Scalar 3, jsdom 31, `@types/chrome` 0.3, `dynamic_color` 2) and `flutter_riverpod` 3.5, which needs a newer Flutter than the 3.41 the build pins.
+
+### Fixed
+
+- Every build target failed at startup since GitVersion 7, which the build installed on demand, dropped the `/output json` syntax that Atom 3.7 calls; `dotnet-tools.json` now pins GitVersion 6.8.2.
+
 ### Added
 
 - The Android app is a share target: "Send to Passel" appears in the share sheet for text and links and in the text selection menu, and opens the send sheet filled in. The extension's screens use the same Send, link and note wording as the app.
