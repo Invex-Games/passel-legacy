@@ -1,0 +1,75 @@
+# ADR 0005: Push notifications on Android
+
+**Status:** proposed, November 2026. Nothing here is built yet. **Decides:** how a packet sent from one device becomes a notification on the owner's Android phones: what the API sends, through what, to which devices, carrying what, and what the owner sets up once. It covers roadmap packages 2.B1 (the sender, Android half) and 2.D3 (the app). Web Push for the extension and the web app (2.E2) follows the same shape later and is left out here.
+
+## Context
+
+The pieces already in place:
+
+- **The device registry** (1.B2, `Domain/Device.cs`, `/api/devices`): a device per installation, with a `Push` that is either `Fcm { Token }` or `WebPush { ... }`, set by `PUT /api/devices/{id}/push`. A token is never returned or logged, belongs to one device across all users (unique `PushKey`), and `ClearDevicePush` exists for the sender to call when FCM says a token is dead. No client registers yet, and nothing sends.
+- **Live updates** (`PacketStoreService.NotifyAsync`, then `pg_notify` and `PacketNotificationListener`): every API instance listens, and each publishes only to users with an event stream open on that instance (`hub.HasSubscribers`). The stream lives only while a client is visible, so a phone in a pocket hears nothing.
+- **Background work after a create** (`LinkPreviewQueue` and `LinkPreviewWorker`): a bounded in-process queue that the store service fills after the commit and a worker drains. A preview lost to a restart is simply never fetched.
+- **Packets don't say where they came from.** `POST /api/packets` takes the content only, so "the user's other devices" can't leave out the sender.
+- **The app** signs in with Google and sends the ID token as its bearer token, an hour at a time. There are no first-party sessions yet (1.B1). Two flavors: `com.invex.passel.mobileapp` and `com.invex.passel.mobileapp.dev`. Flutter is pinned at 3.41.0 in `_atom/appsettings.json`.
+- **The repository is public**, and production is Docker Compose on the owner's server, with its values in the server's `.env` (ADR 0004).
+
+## Options
+
+| Question | Options | Choice |
+|---|---|---|
+| Transport | FCM; a self-hosted push service (ntfy, UnifiedPush); a foreground service holding the event stream open | **FCM.** It is the only way to wake a stock Android app without a permanent notification or battery exemption, and it is what the registry already models. UnifiedPush can come later as a second `DevicePush` case for de-Googled phones. |
+| Who sends | The `pg_notify` listener on every instance; the instance that committed the packet | **The committing instance**, through a queue like the link previews'. Every instance runs the listener, so sending from it would send once per instance; the instance that committed knows it alone did. |
+| Message type | A notification message (FCM shows it); a data-only message (the app builds the notification) | **A notification message with data.** Android shows it with the app in the background or killed, with no Dart running. A data-only message needs a background isolate that can't easily call the API (the ID token expires hourly) and a local-notifications plugin. Actions such as **Copy** need data-only messages, so they wait. |
+| Server library | `FirebaseAdmin`; a thin client over the HTTP v1 API | **A thin client**: one `POST https://fcm.googleapis.com/v1/projects/{project}/messages:send` per token, authorised with `GoogleCredential` from `Google.Apis.Auth` (already a dependency) and scope `https://www.googleapis.com/auth/firebase.messaging`. It goes through a typed `HttpClient` like the preview fetcher, so it gets the resilience handler, telemetry, and the test doubles the integration tests already inject. |
+
+## Decision
+
+### The API (2.B1)
+
+1. **Where a packet came from.** `POST /api/packets` takes an optional `deviceId`, the encoded id of one of the caller's own devices; another user's or an unknown one is a validation problem. The packet keeps it as a nullable `SourceDeviceId`, additive, so a rollback keeps working (ADR 0004). The clients' "sent from Chrome" labels can use it later.
+2. **A push queue and worker.** After the commit in each create path (`PacketStoreService`, beside `previewQueue.TryEnqueue`), the store service enqueues `(UserId, PacketId)` on a bounded `IPushQueue`. A `PushWorker` drains it. It loads the packet and the user's devices whose `Push` is `Fcm`, except the source device, and sends to each. It sends nothing for an update or a delete, and nothing when the packet is gone by the time the worker reaches it. Like the link previews it is best effort: a queue full or lost to a restart drops notifications, never packets. Counting what was dropped is enough.
+3. **The message.** For a link: title "Link from {source device name}" (or "New link" without a source), body the link's host. For a note or a file: "Note from {source device name}" or "File from ...", with no content, so the text the user wrote never goes through Google (see the open decision on privacy, which could widen this). Data: `packetId` (encoded) and `type`. Android: channel `packets`, `tag` = the packet id, so a re-send replaces rather than stacks, `priority: high`, since it is user-visible by definition, and a TTL of a day.
+4. **Answers from FCM.** `404 UNREGISTERED`, and `400 INVALID_ARGUMENT` when the request is otherwise well formed, mean the token is dead: call `ClearDevicePush` for that device, as `docs/components/web-api.md` already says. `429` and `5xx` are retried with backoff, honouring `Retry-After`, a few times, then dropped. `401` and `403` (including `SENDER_ID_MISMATCH`) mean the server's credential or project is wrong: log at Error, keep the token. The token stays out of logs and traces, like every token in the registry.
+5. **Configuration.** `Push:Fcm:ProjectId` and `Push:Fcm:CredentialFile` (a service-account JSON key), bound and validated at startup like the other options. With neither set the sender is off and the queue is never filled, which is how Development, the tests and a stack without Firebase run. With only one set, the API refuses to start.
+6. **The credential on the server.** A compose `secrets:` entry, `fcm-credential`, from a file beside `.env` (`/opt/passel/fcm-credential.json`, owned by 1654, the API's user, mode 400), mounted at `/run/secrets/fcm-credential`, with `Push__Fcm__CredentialFile` pointing there and `Push__Fcm__ProjectId` from `.env`. Both are optional in compose, so a stack without push still starts. `ValidateCompose` covers both shapes. The deploying guide gets the steps, and pre-prod gets a key of its own.
+7. **Tests.** Unit tests for the message builder, the target selection (source excluded, other users never) and the error handling. An integration test against a fake FCM endpoint started in the test process (remember the `AllowedHosts` override such a server needs) checks that a create sends one request per other Android device and that a 404 clears the token.
+
+### The app (2.D3)
+
+1. **Flutter first.** The current `firebase_core` (5.2), `firebase_messaging` (17.1) and `flutter_local_notifications` (23.0) all need Flutter 3.44 or later, so the pin in `_atom/appsettings.json` moves to the current stable (3.50.1), in its own change before this one. That also lets `flutter_riverpod` move to 3.5.
+2. **Firebase config.** One Firebase project with both package names, configured with `flutterfire configure`, which writes the Dart options (`firebase_options.dart`) the app passes to `Firebase.initializeApp`; the Firebase setup docs describe only that path. How the CLI handles two flavors (one options file per flavor, chosen at startup, and whether it also writes per-flavor `google-services.json` and applies the Gradle plugin) is to be confirmed when it is run. Whether those generated values are committed is open below.
+3. **Registering the device.** A new `lib/push/`. After sign-in, and on every start while signed in, the app makes sure it has a device (`POST /api/devices` with an installation id it generated once and keeps in shared preferences), then gets the FCM registration token and `PUT`s it whenever it differs from the last one it sent. It does the same when the plugin reports a new token while the app is running. The Firebase docs now also describe a newer registration API (`register()`, `onRegistered()`, registrations based on the Firebase installation id) beside the familiar `getToken()` and `onTokenRefresh`; which of them `firebase_messaging` 17 exposes, and that what it hands over is still a token the HTTP v1 API sends to (the registry's `Fcm { Token }`), is to be confirmed first. A refresh that happens while the app is closed is sent on the next start. Firebase counts a registration as stale only after a month without a connection, so this needs neither a background job nor first-party sessions (1.B1). Signing out deletes the device's push (`DELETE /api/devices/{id}/push`), so a shared phone stops getting the last user's packets.
+4. **Permission.** Android 13 and later need `POST_NOTIFICATIONS` at runtime. The app asks with `requestPermission()` once, at a moment that explains itself: right after the first sign-in, behind a short "Get a notification when you send something from another device?" sheet, not at first launch. Declining is remembered, and a row in settings offers it again.
+5. **The channel.** A `packets` channel ("Sent to this phone", default importance), created at startup on the platform side or through `flutter_local_notifications`.
+6. **Opening one.** `getInitialMessage()` and `onMessageOpenedApp` give the `packetId`. The feed scrolls to that packet, loading older pages if it has to, and highlights it. In the foreground FCM shows nothing and the app's event stream already shows the packet, so `onMessage` does nothing.
+7. **Sending with a device id.** The app passes its device id when it sends, so its own packets don't notify it. The extension and the web app do the same once they register (2.E2). Until then their packets notify every phone, which is what's wanted.
+8. **Release builds.** Minify and shrink are on, so check a release build on the emulator (the Play image AVD) actually receives a push. The Firebase libraries should bring their own keep rules, but the check is cheap.
+
+### Order
+
+1. Flutter 3.50 and the dependencies it unlocks (its own pull request).
+2. 2.B1: `SourceDeviceId`, the queue, the worker, the FCM client, options, compose secret, docs, tests. It merges dark: nothing sends until the server has a credential.
+3. The owner's Firebase setup (below), then the credential on pre-prod.
+4. 2.D3: the app, tried against pre-prod on the emulator and a phone, then production.
+5. The privacy policy's draft gains a line on what goes through Google, before the first release that registers.
+
+## What the owner does once
+
+1. In the Firebase console, add Firebase to the Google Cloud project that already holds the OAuth clients, so the project and billing stay in one place. A separate project works too.
+2. Register two Android apps, `com.invex.passel.mobileapp` and `com.invex.passel.mobileapp.dev`. No SHA-1 is needed for messaging.
+3. Make sure the **Firebase Cloud Messaging API** (v1) is enabled for the project.
+4. Create a service account for the server, give it the **Firebase Cloud Messaging API Admin** role on the project and nothing else, and create a JSON key for it. Organizations created since May 2024 block key creation by default (`iam.managed.disableServiceAccountKeyCreation`). If the project sits in one, allow keys for this project only. Make one key per stack and copy each to its server as above, never into the repository.
+5. Restrict the Android API key that `flutterfire configure` reports to the two apps.
+
+## Decisions still open
+
+- **What the notification says.** Its text goes through Google's servers, encrypted in transit but readable by Google. The proposal above sends a link's host and, for notes and files, only the kind and the source ("Note from Chrome"), with the content shown once the app opens. The alternative is the content itself (a note's title or first line, a file's name, a link's page title), which is more useful and leaves more with Google; a setting could let each user choose it.
+- **Committing the Firebase config.** The repository is public. The generated options name the project and the apps and include an API key that Firebase treats as an identifier rather than a secret, restricted to the two apps. Committing them keeps builds simple; keeping them out means passing them in at build time like the other dart-defines and adding them to CI's secrets.
+- **Whether a phone should notify for packets it can already see.** With the app in the foreground nothing shows anyway. On a second phone of the same user it does, which is the point.
+
+## Consequences
+
+- Passel depends on Google for push, which it already does for sign-in.
+- The server holds a long-lived Google credential, so rotating it joins the owner's routine, and pre-prod and production have separate keys.
+- Notifications are best effort: a restart or a full queue loses some, and the feed is still right because the event stream and the list don't depend on them.
+- `SourceDeviceId` is the first field that ties a packet to a device. "Send to one device" (feature 8) builds on the same field with a target beside it.
