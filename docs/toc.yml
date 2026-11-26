@@ -49,6 +49,8 @@
             href: decisions/0003-hosting-on-azure.md
         -   name: 0004 Hosting on Docker Compose
             href: decisions/0004-hosting-on-docker-compose.md
+        -   name: 0005 Push notifications on Android
+            href: decisions/0005-push-notifications-on-android.md
 -   name: Evaluation
     href: evaluation/index.md
     items:
