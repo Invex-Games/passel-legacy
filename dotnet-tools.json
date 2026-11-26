@@ -2,6 +2,13 @@
   "version": 1,
   "isRoot": true,
   "tools": {
+    "gitversion.tool": {
+      "version": "6.8.2",
+      "commands": [
+        "dotnet-gitversion"
+      ],
+      "rollForward": false
+    },
     "invex.atom.tool": {
       "version": "5.0.0",
       "commands": [
@@ -13,13 +20,6 @@
       "version": "13.6.5",
       "commands": [
         "aspire"
-      ],
-      "rollForward": false
-    },
-    "gitversion.tool": {
-      "version": "6.8.2",
-      "commands": [
-        "dotnet-gitversion"
       ],
       "rollForward": false
     }
