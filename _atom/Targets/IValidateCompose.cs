@@ -6,7 +6,8 @@ namespace Atom.Targets;
 ///     Checks the self-hosted deployment's compose files and scripts (<c>deploy/compose</c>) without running them:
 ///     <c>docker compose config</c> over the base file alone and with each override, every profile on, against the
 ///     placeholders in <c>ci.env</c> and in <c>ci.preprod.env</c>, a second stack on the same server; what compose
-///     makes of each stack's settings; and shellcheck over the scripts, the web image's entrypoint among them.
+///     makes of each stack's settings, with and without the push overlay; and shellcheck over the scripts, the web
+///     image's entrypoint among them.
 /// </summary>
 internal interface IValidateCompose : IBuildAccessor
 {
@@ -30,7 +31,8 @@ internal interface IValidateCompose : IBuildAccessor
     ///     The placeholder settings of two stacks on one server and what compose must make of each. <c>ci.env</c>
     ///     leaves every per-stack setting at its default, production's, which must stay what it was before stacks were
     ///     configurable. <c>ci.preprod.env</c> sets each one as a pre-prod stack beside it would, and leaves
-    ///     <c>PROXY_TRUSTED_CIDR</c> out, so the API must trust that stack's own edge address.
+    ///     <c>PROXY_TRUSTED_CIDR</c> out, so the API must trust that stack's own edge address. With the push overlay,
+    ///     ci.env leaves the key at its default path and ci.preprod.env names one by its full path.
     /// </summary>
     private static StackExpectation[] Stacks =>
     [
@@ -46,7 +48,9 @@ internal interface IValidateCompose : IBuildAccessor
             "passel-web",
             "172.30.0.2/32",
             "18080",
-            "18081"),
+            "18081",
+            "passel-ci",
+            null),
         new("ci.preprod.env",
             "passel-preprod",
             "172.30.3.0/24",
@@ -59,7 +63,9 @@ internal interface IValidateCompose : IBuildAccessor
             "passel-preprod-web",
             "172.30.2.2/32",
             "18082",
-            "18083"),
+            "18083",
+            "passel-preprod-ci",
+            "/opt/passel-preprod/fcm-credential.json"),
     ];
 
     Target ValidateCompose =>
@@ -72,6 +78,8 @@ internal interface IValidateCompose : IBuildAccessor
                     ["compose.yaml"],
                     ["compose.yaml", "compose.ports.yaml"],
                     ["compose.yaml", "compose.external-proxy.yaml"],
+                    ["compose.yaml", "compose.push.yaml"],
+                    ["compose.yaml", "compose.ports.yaml", "compose.push.yaml"],
                 ];
 
                 foreach (var stack in Stacks)
@@ -233,6 +241,62 @@ internal interface IValidateCompose : IBuildAccessor
             Expect("The web app's loopback port", PublishedPort(services.GetProperty("web")), stack.WebPort);
         }
 
+        // Without the push overlay the API has no key and no push settings, so it starts with push off
+        using (var document = await ComposeConfig(stack.EnvFile, ["compose.yaml"], [], cancellationToken))
+        {
+            var root = document.RootElement;
+            var api = root.GetProperty("services").GetProperty("api");
+
+            if (root.TryGetProperty("secrets", out _) || api.TryGetProperty("secrets", out _))
+                problems.Add("Without compose.push.yaml the stack has a secret");
+
+            if (api.GetProperty("environment").EnumerateObject().Any(variable => variable.Name.StartsWith("Push__")))
+                problems.Add("Without compose.push.yaml the API has push settings");
+        }
+
+        // With it, the key is a file secret mounted where Push__Fcm__CredentialFile points, from the root beside .env
+        // unless FCM_CREDENTIAL_FILE names another file, and the project comes from FCM_PROJECT_ID
+        using (var document = await ComposeConfig(stack.EnvFile,
+                   ["compose.yaml", "compose.push.yaml"],
+                   [],
+                   cancellationToken))
+        {
+            var root = document.RootElement;
+            var api = root.GetProperty("services").GetProperty("api");
+            var environment = api.GetProperty("environment");
+
+            Expect("With compose.push.yaml, Push__Fcm__ProjectId",
+                StringProperty(environment, "Push__Fcm__ProjectId"),
+                stack.FcmProjectId);
+
+            Expect("With compose.push.yaml, Push__Fcm__CredentialFile",
+                StringProperty(environment, "Push__Fcm__CredentialFile"),
+                "/run/secrets/fcm-credential");
+
+            var mounted = api.TryGetProperty("secrets", out var secrets) &&
+                          secrets.EnumerateArray().Any(secret =>
+                              StringProperty(secret, "source") == "fcm-credential" &&
+                              StringProperty(secret, "target") == "/run/secrets/fcm-credential");
+
+            if (!mounted)
+                problems.Add("With compose.push.yaml the API does not mount fcm-credential at /run/secrets/fcm-credential");
+
+            var file = root.TryGetProperty("secrets", out var definitions) &&
+                       definitions.TryGetProperty("fcm-credential", out var definition)
+                ? StringProperty(definition, "file")
+                : null;
+
+            // The default is two levels above the compose files, which on the server is the root beside .env
+            var expectedFile = stack.FcmCredentialFile ??
+                               Path.GetFullPath(Path.Combine($"{ComposeDirectory}", "..", "..", "fcm-credential.json"));
+
+            if (file is null ||
+                !string.Equals(stack.FcmCredentialFile is null ? Path.GetFullPath(file) : file,
+                    expectedFile,
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                problems.Add($"With compose.push.yaml the key file is '{file}', expected '{expectedFile}'");
+        }
+
         if (problems.Count > 0)
             throw new StepFailedException($"With {stack.EnvFile}: " + string.Join("; ", problems));
 
@@ -316,5 +380,7 @@ internal interface IValidateCompose : IBuildAccessor
         string WebAlias,
         string TrustedCidr,
         string ApiPort,
-        string WebPort);
+        string WebPort,
+        string FcmProjectId,
+        string? FcmCredentialFile);
 }

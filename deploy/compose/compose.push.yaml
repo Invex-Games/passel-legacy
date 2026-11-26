@@ -1,0 +1,23 @@
+# Push notifications through Firebase Cloud Messaging (COMPOSE_FILE adds this file; ADR 0005). It hands the API the
+# service account key it sends with, as a file secret, and the Firebase project to send through. Without this file the
+# API starts with push off; compose refuses to start a service whose secret file is missing, so the key can't be
+# optional in compose.yaml itself.
+#
+# The key lives beside .env, at <root>/fcm-credential.json (/opt/passel/fcm-credential.json, and
+# /opt/passel-preprod/fcm-credential.json for pre-prod, which has a key of its own), owned by 1654, the API's user,
+# with mode 400. Compose reads relative paths from the release directory, <root>/releases/<tag>, so the default
+# reaches up to the root; run by hand from <root>/current, which is a link, set FCM_CREDENTIAL_FILE in .env to the
+# key's full path instead. FCM_PROJECT_ID in .env names the Firebase project.
+
+services:
+  api:
+    secrets:
+      - source: fcm-credential
+        target: /run/secrets/fcm-credential
+    environment:
+      Push__Fcm__ProjectId: ${FCM_PROJECT_ID:?set FCM_PROJECT_ID in .env}
+      Push__Fcm__CredentialFile: /run/secrets/fcm-credential
+
+secrets:
+  fcm-credential:
+    file: ${FCM_CREDENTIAL_FILE:-../../fcm-credential.json}
