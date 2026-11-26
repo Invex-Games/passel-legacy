@@ -11,8 +11,19 @@ namespace Invex.Passel.WebApi.Tests;
 ///     Only an answer that names the token kills it; a credential or project problem keeps it, and so does a 400 that
 ///     points at the message.
 /// </summary>
-public sealed class FcmSenderTests
+public sealed class FcmSenderTests : IDisposable
 {
+    /// <summary>
+    ///     The clients the senders were built with, and with them their stub handlers, disposed after each test.
+    /// </summary>
+    private readonly List<HttpClient> _clients = [];
+
+    public void Dispose()
+    {
+        foreach (var client in _clients)
+            client.Dispose();
+    }
+
     private static CancellationToken CancellationToken =>
         TestContext.Current.CancellationToken;
 
@@ -47,14 +58,19 @@ public sealed class FcmSenderTests
         }
     }
 
-    private static FcmSender Sender(HttpMessageHandler handler) =>
-        new(new HttpClient(handler),
+    private FcmSender Sender(HttpMessageHandler handler)
+    {
+        var client = new HttpClient(handler);
+        _clients.Add(client);
+
+        return new(client,
             new StubTokens(),
             Microsoft.Extensions.Options.Options.Create(new PushOptions
             {
                 Fcm = new() { ProjectId = "passel-test", CredentialFile = "unused.json" },
             }),
             TimeProvider.System);
+    }
 
     private static string Error(int code, string status, params string[] details) =>
         $$$"""{"error":{"code":{{{code}}},"message":"Some message","status":"{{{status}}}","details":[{{{string.Join(",", details)}}}]}}""";

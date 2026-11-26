@@ -113,14 +113,22 @@ public sealed class PushWorkerTests
         MaxRetryAfter = TimeSpan.FromMinutes(1),
     };
 
-    private static async Task<(FcmSendResult Result, List<TimeSpan> Waits)> SendAsync(ScriptedSender sender)
+    /// <summary>
+    ///     Sends through the retry loop, the target still there before every attempt unless
+    ///     <paramref name="stillTargeted" /> says otherwise; it is given the attempt about to be made, from 1.
+    /// </summary>
+    private static async Task<(FcmSendResult? Result, List<TimeSpan> Waits)> SendAsync(
+        ScriptedSender sender,
+        Func<int, bool>? stillTargeted = null)
     {
         var waits = new List<TimeSpan>();
+        var checks = 0;
 
         var result = await PushWorker.SendWithRetriesAsync(sender,
             "token",
             Message,
             Options,
+            _ => Task.FromResult(stillTargeted?.Invoke(++checks) ?? true),
             CancellationToken,
             (wait, _) =>
             {
@@ -197,5 +205,47 @@ public sealed class PushWorkerTests
         Assert.IsType<FcmSendResult.Transient>(result);
         Assert.Equal(1, sender.Calls);
         Assert.Empty(waits);
+    }
+
+    [Fact]
+    public async Task A_target_withdrawn_before_the_first_attempt_is_never_sent_to()
+    {
+        var sender = new ScriptedSender(Sent);
+
+        var (result, waits) = await SendAsync(sender, _ => false);
+
+        Assert.Null(result);
+        Assert.Equal(0, sender.Calls);
+        Assert.Empty(waits);
+    }
+
+    [Fact]
+    public async Task A_target_withdrawn_while_a_retry_waits_is_sent_to_once()
+    {
+        var sender = new ScriptedSender(Transient(), Sent);
+
+        var (result, waits) = await SendAsync(sender, attempt => attempt == 1);
+
+        Assert.Null(result);
+        Assert.Equal(1, sender.Calls);
+        Assert.Equal([TimeSpan.FromSeconds(2)], waits);
+    }
+
+    [Fact]
+    public async Task The_target_is_checked_before_every_attempt()
+    {
+        var sender = new ScriptedSender(Transient(), Transient(), Sent);
+        var checkedAttempts = new List<int>();
+
+        var (result, _) = await SendAsync(sender,
+            attempt =>
+            {
+                checkedAttempts.Add(attempt);
+
+                return true;
+            });
+
+        Assert.Same(Sent, result);
+        Assert.Equal([1, 2, 3], checkedAttempts);
     }
 }

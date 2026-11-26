@@ -239,6 +239,48 @@ public sealed class PushTests(PasselApiFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_token_registered_by_another_account_while_a_retry_waits_gets_no_retry()
+    {
+        using var alice = _api.CreateClientFor(PasselApiFixture.User("alice"));
+        using var bob = _api.CreateClientFor(PasselApiFixture.User("bob"));
+        var token = NewFcmToken();
+        var alicesPhone = await AndroidAsync(alice, "Phone", token);
+
+        // The first attempt is answered 503 only once the phone has signed in as Bob and registered the same token,
+        // so the retry, which Push:RetryDelay makes immediate, comes after the token has moved
+        var moved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _fcm.AnswerFor(token,
+            async () =>
+            {
+                await moved.Task;
+
+                return FakeFcmServer.Unavailable();
+            });
+
+        var alicesNote = await alice.CreateTextAsync(null, "for Alice", CancellationToken);
+
+        Assert.Equal(alicesNote.Id, (await _fcm.NextSendAsync(Arrival, CancellationToken)).Body["message"]!["data"]!["packetId"]!.GetValue<string>());
+
+        // From here on the token is answered at once, so a send to it can only be missing because none was made
+        _fcm.AnswerFor(token, () => Task.FromResult(Results.Json(new { name = "projects/passel-test/messages/3" })));
+
+        var bobsPhone = await AndroidAsync(bob, "Phone", token);
+        moved.SetResult();
+
+        // Sends run one packet at a time, so the next message to reach FCM after Alice's retry was due is Bob's
+        var bobsNote = await bob.CreateTextAsync(null, "for Bob", CancellationToken);
+        var sends = await SendsAsync(1);
+
+        Assert.Equal(bobsNote.Id, sends[0].Body["message"]!["data"]!["packetId"]!.GetValue<string>());
+        Assert.Equal(token, sends[0].Token);
+
+        // The token is Bob's now, and stays so: nothing cleared it
+        Assert.NotNull((await bob.ListedAsync(bobsPhone.Id, CancellationToken)).PushUpdatedAt);
+        Assert.Null((await alice.ListedAsync(alicesPhone.Id, CancellationToken)).PushUpdatedAt);
+    }
+
+    [Fact]
     public async Task A_packet_deleted_before_its_turn_notifies_no_one()
     {
         using var alice = _api.CreateClientFor(PasselApiFixture.User("alice"));

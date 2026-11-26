@@ -21,6 +21,7 @@ internal sealed record PushTarget(Guid DeviceId, string Token, string PushKey)
 internal sealed partial class PushWorker(
     PushQueue queue,
     IServiceScopeFactory scopeFactory,
+    IDocumentStore store,
     IIdEncodingService encodingService,
     IOptions<PushOptions> options,
     ILogger<PushWorker> logger) : BackgroundService
@@ -99,10 +100,20 @@ internal sealed partial class PushWorker(
 
         foreach (var target in targets)
         {
-            var result = await SendWithRetriesAsync(sender, target.Token, message, options.Value, cancellationToken);
+            var result = await SendWithRetriesAsync(sender,
+                target.Token,
+                message,
+                options.Value,
+                token => StillTargetedAsync(job.UserId, target, token),
+                cancellationToken);
 
             switch (result)
             {
+                case null:
+                    LogWithdrawn(packet.Id, target.DeviceId);
+
+                    break;
+
                 case FcmSendResult.Sent:
                     LogSent(packet.Id, target.DeviceId);
 
@@ -124,6 +135,21 @@ internal sealed partial class PushWorker(
                     break;
             }
         }
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="target" /> is still where this packet's notification may go: the device is still
+    ///     there, still the user's, and still holds the token that was read for it. Read afresh, in a session of its
+    ///     own, before every attempt: while a send waits or retries, the token can move to another account (whoever
+    ///     registers it last holds it), be withdrawn at sign-out, or go with its device, and the user's notification
+    ///     must then not reach it.
+    /// </summary>
+    private async Task<bool> StillTargetedAsync(string userId, PushTarget target, CancellationToken cancellationToken)
+    {
+        await using var session = store.QuerySession();
+        var device = await session.LoadAsync<Device>(target.DeviceId, cancellationToken);
+
+        return device is not null && device.UserId == userId && device.PushKey == target.PushKey;
     }
 
     /// <summary>
@@ -170,13 +196,16 @@ internal sealed partial class PushWorker(
     ///     Sends the message, trying again after a transient failure up to <see cref="PushOptions.MaxAttempts" />
     ///     times in all. The wait before each new attempt doubles from <see cref="PushOptions.RetryDelay" />, and is at
     ///     least the <c>Retry-After</c> FCM asked for; one longer than <see cref="PushOptions.MaxRetryAfter" /> ends the
-    ///     attempts. Anything but a transient failure is returned at once.
+    ///     attempts. Anything but a transient failure is returned at once. <paramref name="stillTargeted" /> is asked
+    ///     before every attempt, the first included; when it says no, nothing more is sent and the answer is
+    ///     <c>null</c>: the token is no longer the target's.
     /// </summary>
-    internal static async Task<FcmSendResult> SendWithRetriesAsync(
+    internal static async Task<FcmSendResult?> SendWithRetriesAsync(
         IFcmSender sender,
         string token,
         PushMessage message,
         PushOptions options,
+        Func<CancellationToken, Task<bool>> stillTargeted,
         CancellationToken cancellationToken,
         Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
@@ -184,6 +213,9 @@ internal sealed partial class PushWorker(
 
         for (var attempt = 1;; attempt++)
         {
+            if (!await stillTargeted(cancellationToken))
+                return null;
+
             var result = await sender.SendAsync(token, message, cancellationToken);
 
             if (result is not FcmSendResult.Transient transient || attempt >= options.MaxAttempts)
@@ -207,6 +239,11 @@ internal sealed partial class PushWorker(
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Packet {PacketId} was deleted before its notifications were sent")]
     private partial void LogGone(Guid packetId);
+
+    // The device id only: the token that moved or was withdrawn is never logged
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Device {DeviceId} gave up or lost its push token, or was removed, before packet {PacketId} reached it; nothing more is sent to it")]
+    private partial void LogWithdrawn(Guid packetId, Guid deviceId);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Notified device {DeviceId} of packet {PacketId}")]
     private partial void LogSent(Guid packetId, Guid deviceId);
