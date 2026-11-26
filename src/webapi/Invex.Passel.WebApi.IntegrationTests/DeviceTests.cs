@@ -1,6 +1,9 @@
 using System.Net;
 using System.Text.Json.Nodes;
+using Invex.Passel.WebApi.Domain;
+using Invex.Passel.WebApi.Domain.Commands;
 using Invex.Passel.WebApi.Options;
+using Invex.Passel.WebApi.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -518,6 +521,84 @@ public sealed class DeviceTests(PasselApiFixture fixture)
         return problem.RootElement.TryGetProperty("detail", out var detail)
             ? detail.GetString()
             : null;
+    }
+
+    /// <summary>
+    ///     The push sender's clear, as it calls it: through the store service, with the key of the token it sent to.
+    /// </summary>
+    private async Task<bool> ClearIfStillAsync(string userId, string encodedDeviceId, string? expectedPushKey)
+    {
+        Assert.True(fixture.Api.Services.GetRequiredService<IIdEncodingService>().TryDecode(encodedDeviceId, out var deviceId));
+
+        await using var scope = fixture.Api.Services.CreateAsyncScope();
+
+        return await scope.ServiceProvider.GetRequiredService<IDeviceStoreService>().Handle(new ClearDevicePush
+        {
+            UserId = userId,
+            DeviceId = deviceId,
+            ExpectedPushKey = expectedPushKey,
+        });
+    }
+
+    private static string FcmKey(string token) =>
+        DevicePush.KeyOf(new DevicePush.Fcm
+        {
+            Token = token,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+
+    [Fact]
+    public async Task A_clear_for_the_token_the_device_holds_clears_it()
+    {
+        var userId = PasselApiFixture.User("alice");
+        using var alice = fixture.Api.CreateClientFor(userId);
+        var device = await alice.RegisterAsync(DeviceApi.NewInstallationId(), "Phone", "android", HttpStatusCode.Created, CancellationToken);
+        var token = NewFcmToken();
+
+        using (var set = await alice.PutPushAsync(device.Id, DeviceApi.FcmToken(token), CancellationToken))
+            Assert.Equal(HttpStatusCode.NoContent, set.StatusCode);
+
+        Assert.True(await ClearIfStillAsync(userId, device.Id, FcmKey(token)));
+        Assert.Null((await alice.ListedAsync(device.Id, CancellationToken)).PushUpdatedAt);
+    }
+
+    [Fact]
+    public async Task A_clear_for_a_token_the_device_has_since_replaced_leaves_the_replacement()
+    {
+        var userId = PasselApiFixture.User("alice");
+        using var alice = fixture.Api.CreateClientFor(userId);
+        var device = await alice.RegisterAsync(DeviceApi.NewInstallationId(), "Phone", "android", HttpStatusCode.Created, CancellationToken);
+        var (old, replacement) = (NewFcmToken(), NewFcmToken());
+
+        using (var set = await alice.PutPushAsync(device.Id, DeviceApi.FcmToken(old), CancellationToken))
+            Assert.Equal(HttpStatusCode.NoContent, set.StatusCode);
+
+        using (var set = await alice.PutPushAsync(device.Id, DeviceApi.FcmToken(replacement), CancellationToken))
+            Assert.Equal(HttpStatusCode.NoContent, set.StatusCode);
+
+        var before = await alice.ListedAsync(device.Id, CancellationToken);
+
+        // The device is there, so this is no error; it simply changes nothing
+        Assert.True(await ClearIfStillAsync(userId, device.Id, FcmKey(old)));
+        Assert.Equal(before, await alice.ListedAsync(device.Id, CancellationToken));
+
+        // The replacement is what the device holds, and a clear for it works
+        Assert.True(await ClearIfStillAsync(userId, device.Id, FcmKey(replacement)));
+        Assert.Null((await alice.ListedAsync(device.Id, CancellationToken)).PushUpdatedAt);
+    }
+
+    [Fact]
+    public async Task A_conditional_clear_of_another_users_device_finds_nothing()
+    {
+        using var alice = fixture.Api.CreateClientFor(PasselApiFixture.User("alice"));
+        var device = await alice.RegisterAsync(DeviceApi.NewInstallationId(), "Phone", "android", HttpStatusCode.Created, CancellationToken);
+        var token = NewFcmToken();
+
+        using (var set = await alice.PutPushAsync(device.Id, DeviceApi.FcmToken(token), CancellationToken))
+            Assert.Equal(HttpStatusCode.NoContent, set.StatusCode);
+
+        Assert.False(await ClearIfStillAsync(PasselApiFixture.User("bob"), device.Id, FcmKey(token)));
+        Assert.NotNull((await alice.ListedAsync(device.Id, CancellationToken)).PushUpdatedAt);
     }
 
     private static async Task AssertValidationProblemAsync(HttpResponseMessage response, string field)

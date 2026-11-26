@@ -2,6 +2,7 @@
 !compose.yaml
 !compose.external-proxy.yaml
 !compose.ports.yaml
+!compose.push.yaml
 !deploy.sh
 !deploy-gate.sh
 !backup.sh

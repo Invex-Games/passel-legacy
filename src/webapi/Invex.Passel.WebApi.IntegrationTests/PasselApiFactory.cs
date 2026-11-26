@@ -20,14 +20,16 @@ namespace Invex.Passel.WebApi.IntegrationTests;
 ///     nothing and checks at startup that the schema has what it needs, so it can run on a role that has only DML.
 ///     Files go to the blob storage at <paramref name="blobConnectionString" />, or, without one, to
 ///     <paramref name="parcelStore" /> when it is given and an <see cref="InMemoryParcelStore" /> otherwise.
-///     <paramref name="settings" /> are applied last, over the factory's own.
+///     <paramref name="settings" /> are applied last, over the factory's own, and <paramref name="services" /> after the
+///     factory's own test services. Push is off unless <paramref name="settings" /> turn it on.
 /// </summary>
 internal sealed class PasselApiFactory(
     string connectionString,
     bool migratedSchema = false,
     string? blobConnectionString = null,
     IReadOnlyDictionary<string, string?>? settings = null,
-    IParcelStore? parcelStore = null)
+    IParcelStore? parcelStore = null,
+    Action<IServiceCollection>? services = null)
     : WebApplicationFactory<Program>
 {
     /// <summary>
@@ -57,6 +59,11 @@ internal sealed class PasselApiFactory(
             builder.UseSetting("ConnectionStrings:passel-blobs", blobConnectionString);
         builder.UseSetting("Authentication:Google:ClientId", string.Empty);
         builder.UseSetting("Authentication:Google:ClientSecret", string.Empty);
+
+        // Off whatever a developer's settings say, so the suite never sends a notification through Firebase; the push
+        // tests turn it on against a fake FCM of their own
+        builder.UseSetting("Push:Fcm:ProjectId", string.Empty);
+        builder.UseSetting("Push:Fcm:CredentialFile", string.Empty);
 
         // The contract fixtures carry ids encoded by the API; pinned so they come out the same on every machine
         builder.UseSetting("Encoding:Alphabet", IdEncodingService.DefaultAlphabet);
@@ -96,27 +103,29 @@ internal sealed class PasselApiFactory(
         // nothing is fetched from the internet, and a refused fetch is over before the test that created the link
         // goes on. The fetcher takes the resolver as an optional constructor parameter, which the container fills
         // in once the delegate type is registered
-        builder.ConfigureTestServices(services =>
+        builder.ConfigureTestServices(testServices =>
         {
             if (migratedSchema)
             {
-                services.ConfigureMarten(options =>
+                testServices.ConfigureMarten(options =>
                 {
                     options.AutoCreateSchemaObjects = AutoCreate.None;
                     SetStartupFlag(options, "ShouldApplyChangesOnStartup", false);
                 });
 
-                services.AddHostedService<DatabaseSchemaCheck>();
+                testServices.AddHostedService<DatabaseSchemaCheck>();
             }
 
             // Hosts started beside the shared one have no blob storage of their own
             if (blobConnectionString is null)
-                services.Replace(ServiceDescriptor.Singleton<IParcelStore>(parcelStore ?? new InMemoryParcelStore()));
+                testServices.Replace(ServiceDescriptor.Singleton<IParcelStore>(parcelStore ?? new InMemoryParcelStore()));
 
-            services.AddSingleton<ILinkPreviewAddressPolicy, LoopbackAllowingAddressPolicy>();
+            testServices.AddSingleton<ILinkPreviewAddressPolicy, LoopbackAllowingAddressPolicy>();
 
             LinkPreviewFetcher.HostResolver resolver = ResolveOfflineAsync;
-            services.AddSingleton(resolver);
+            testServices.AddSingleton(resolver);
+
+            services?.Invoke(testServices);
         });
     }
 

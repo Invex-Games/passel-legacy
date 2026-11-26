@@ -15,6 +15,13 @@ public sealed class Packet
     public required DateTimeOffset CreatedAt { get; init; }
 
     public required PacketContent Content { get; init; }
+
+    /// <summary>
+    ///     The user's device the packet was sent from, when the client said (the <c>deviceId</c> of
+    ///     <c>POST /api/packets</c>); <c>null</c> otherwise, and for every packet stored before it was recorded. The push
+    ///     sender leaves it out of the devices it notifies, and names it in the notification. Not on the wire yet.
+    /// </summary>
+    public Guid? SourceDeviceId { get; init; }
 }
 
 /// <summary>

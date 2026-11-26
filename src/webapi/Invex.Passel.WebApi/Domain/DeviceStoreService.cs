@@ -65,7 +65,8 @@ internal interface IDeviceStoreService
     Task<SetDevicePushResult> Handle(SetDevicePush command);
 
     /// <summary>
-    ///     Returns <c>false</c> if the user has no such device; a device without a token is no error.
+    ///     Returns <c>false</c> if the user has no such device; a device without a token, or with another token than
+    ///     <see cref="ClearDevicePush.ExpectedPushKey" />, is no error and is left as it is.
     /// </summary>
     Task<bool> Handle(ClearDevicePush command);
 }
@@ -251,6 +252,10 @@ internal sealed partial class DeviceStoreService(
                 return false;
 
             if (device.Push is null)
+                return true;
+
+            // Checked on every attempt: a race lost to the device registering another token must not clear that one
+            if (command.ExpectedPushKey is not null && device.PushKey != command.ExpectedPushKey)
                 return true;
 
             session.Update(device.WithPush(null));

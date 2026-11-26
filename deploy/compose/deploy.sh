@@ -7,6 +7,8 @@
 # passel-deploy image of the same tag, so the compose files always match the images. The server's settings are in
 # <root>/.env. In order it:
 #
+#   0. checks, when COMPOSE_FILE adds compose.push.yaml, that FCM_PROJECT_ID is set and the FCM key is there, and
+#      warns when its owner and mode look wrong for the API's user,
 #   1. pulls the images (Passel's own only when missing, since a version tag never moves; the others too with
 #      --no-migrate, and a cached one is used when its registry can't be reached),
 #   2. starts PostgreSQL and waits for it to be healthy,
@@ -75,6 +77,57 @@ if command -v flock >/dev/null; then
     flock -n 9 || die "another deploy is running"
 fi
 
+# Reads one key from .env, without its quotes, for the values deploy.sh needs itself
+env_value() {
+    sed -n "s/^$1=//p" "$env_file" | tail -n 1 | sed -e "s/^['\"]//" -e "s/['\"]\$//"
+}
+
+# With compose.push.yaml the API needs the service account key the overlay mounts, and compose would only say so once
+# it starts the API. Checked here, before anything runs: FCM_PROJECT_ID must be set, and the file compose will use
+# (FCM_CREDENTIAL_FILE, relative to the release directory like the compose files, or <root>/fcm-credential.json,
+# which the overlay defaults to) must be there. The deploy user usually can't read the key, so whether 1654, the API's
+# user, can is judged from its owner and mode, and only warned about: with user namespaces or ACLs that judgement can
+# be wrong, and the API refuses to start, saying why, when it really can't read the key
+check_push_credential() {
+    local compose_files file credential owner group mode uses_push=false
+    local -a files
+
+    compose_files=$(env_value COMPOSE_FILE)
+    IFS=: read -r -a files <<<"$compose_files"
+
+    for file in "${files[@]}"; do
+        if [ "$(basename -- "$file")" = compose.push.yaml ]; then
+            uses_push=true
+        fi
+    done
+
+    [ "$uses_push" = true ] || return 0
+
+    [ -n "$(env_value FCM_PROJECT_ID)" ] ||
+        die "COMPOSE_FILE adds compose.push.yaml but FCM_PROJECT_ID is not set in $env_file"
+
+    credential=$(env_value FCM_CREDENTIAL_FILE)
+    if [ -z "$credential" ]; then
+        credential=$root/fcm-credential.json
+    elif [[ $credential != /* ]]; then
+        credential=$release_dir/$credential
+    fi
+
+    [ -f "$credential" ] ||
+        die "COMPOSE_FILE adds compose.push.yaml but the FCM key $credential is missing; copy the service account's JSON key there, owned by 1654 with mode 400 (docs/guides/deploying.md)"
+
+    read -r owner group mode < <(stat -L -c '%u %g %a' -- "$credential")
+    mode=$((8#$mode))
+
+    if ! { { [ "$owner" = 1654 ] && ((mode & 8#400)); } ||
+        { [ "$group" = 1654 ] && ((mode & 8#040)); } ||
+        ((mode & 8#004)); }; then
+        echo "deploy.sh: warning: the API's user (1654) may not be able to read $credential; give it to 1654 with chown 1654:1654 and chmod 400" >&2
+    fi
+}
+
+check_push_credential
+
 # COMPOSE_FILE in .env names files relative to the release directory
 cd "$release_dir"
 
@@ -82,11 +135,6 @@ printf 'PASSEL_TAG=%s\n' "$tag" >"$next_file"
 
 compose() {
     docker compose --env-file "$env_file" --env-file "$next_file" "$@"
-}
-
-# Reads one key from .env, without its quotes, for the values deploy.sh needs itself
-env_value() {
-    sed -n "s/^$1=//p" "$env_file" | tail -n 1 | sed -e "s/^['\"]//" -e "s/['\"]\$//"
 }
 
 on_failure() {

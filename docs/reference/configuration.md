@@ -23,7 +23,7 @@ The self-hosted deployment ([Releasing and Deploying](../guides/deploying.md#sel
 | `.env` key | Required | Becomes |
 |---|---|---|
 | `PASSEL_TAG` | Set by `deploy.sh` | The tag of the `passel-webapi` and `passel-web` images, and `service.version` in `OTEL_RESOURCE_ATTRIBUTES` |
-| `COMPOSE_FILE`, `COMPOSE_PROFILES` | Yes | Which files and profiles every compose command uses: the proxy setup, and `telemetry` for the dashboard |
+| `COMPOSE_FILE`, `COMPOSE_PROFILES` | Yes | Which files and profiles every compose command uses: the proxy setup, `compose.push.yaml` for push notifications, and `telemetry` for the dashboard |
 | `POSTGRES_USER`, `POSTGRES_DB` | No | The superuser and the database PostgreSQL creates on first start (`postgres`, `passel`); `POSTGRES_DB` is also the database in both connection strings |
 | `POSTGRES_PASSWORD` | Yes | The superuser's password, which `db-roles` signs in with. PostgreSQL only sets it when the database is first created |
 | `PASSEL_OWNER_DB_PASSWORD` | Yes | The password of `passel_owner`, and `db-migrate`'s `ConnectionStrings__passel-db` (`Username=passel_owner`) |
@@ -38,6 +38,8 @@ The self-hosted deployment ([Releasing and Deploying](../guides/deploying.md#sel
 | `PROXY_NETWORK` | With `compose.external-proxy.yaml` | The existing Docker network the `edge` network becomes |
 | `API_PORT`, `WEB_PORT` | No | The loopback ports of `compose.ports.yaml` (18080, 18081) |
 | `DASHBOARD_PORT` | No | The dashboard's loopback port with the `telemetry` profile (18888) |
+| `FCM_PROJECT_ID` | With `compose.push.yaml` | `Push__Fcm__ProjectId`, the Firebase project the notifications go through. `deploy.sh` refuses to deploy the overlay without it |
+| `FCM_CREDENTIAL_FILE` | No | With `compose.push.yaml`: the service account key mounted as the `fcm-credential` secret at `/run/secrets/fcm-credential`, which `Push__Fcm__CredentialFile` names. Default `../../fcm-credential.json` from the release directory, which is the root beside `.env`; set the full path to run compose by hand from `current`. The file must be readable by 1654, the API's user (owned by it, mode 400), and `deploy.sh` refuses to deploy the overlay while it is missing, and warns when its owner and mode look wrong |
 | `COMPOSE_PROJECT_NAME` | No | The project name, `passel` by default, which prefixes the stack's containers, networks and volumes (`passel_pgdata`). A second stack on the server needs another, such as `passel-preprod` |
 | `PASSEL_BACKEND_SUBNET`, `PASSEL_BACKEND_GATEWAY` | No | The `backend` network's subnet and gateway (`172.30.1.0/24`, `172.30.1.1`) |
 | `PASSEL_EDGE_SUBNET`, `PASSEL_EDGE_GATEWAY`, `PASSEL_EDGE_IP_RANGE` | No | The `edge` network's subnet, gateway and the range other containers get addresses from (`172.30.0.0/24`, `172.30.0.1`, `172.30.0.128/25`). Not used with `compose.external-proxy.yaml` |
@@ -47,7 +49,7 @@ The self-hosted deployment ([Releasing and Deploying](../guides/deploying.md#sel
 | `SMOKE_URL` | No | What `deploy.sh` fetches after starting a release |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_HEADERS` | No | Passed to the API and `db-migrate` as they are; no endpoint, no export. `OTEL_SERVICE_NAME` is `passel-webapi` and `passel-migrate` |
 
-The compose file also sets, on the API and `db-migrate`, `ASPNETCORE_ENVIRONMENT` and `DOTNET_ENVIRONMENT` to `Production`, and on the API `Parcels__Store=FileSystem` with `Parcels__FileSystemRoot=/var/lib/passel/parcels`, in the `parcels` volume. To tune one of the Web API settings below on the server, add it to the API's `environment` in a compose override kept outside the releases, such as `/opt/passel/compose.local.yaml`, and add that file to `COMPOSE_FILE` by its absolute path (`COMPOSE_FILE=compose.yaml:/opt/passel/compose.local.yaml`); the release directories are replaced on every deploy.
+The compose file also sets, on the API and `db-migrate`, `ASPNETCORE_ENVIRONMENT` and `DOTNET_ENVIRONMENT` to `Production`, and on the API `Parcels__Store=FileSystem` with `Parcels__FileSystemRoot=/var/lib/passel/parcels`, in the `parcels` volume. `compose.push.yaml` adds `Push__Fcm__ProjectId` and `Push__Fcm__CredentialFile=/run/secrets/fcm-credential`; without it the API runs with push off. To tune one of the Web API settings below on the server, add it to the API's `environment` in a compose override kept outside the releases, such as `/opt/passel/compose.local.yaml`, and add that file to `COMPOSE_FILE` by its absolute path (`COMPOSE_FILE=compose.yaml:/opt/passel/compose.local.yaml`); the release directories are replaced on every deploy.
 
 These stay unset in the compose deployment, since each belongs to Azure or to Development and would change how the API signs in, exports or trusts headers: `APPLICATIONINSIGHTS_CONNECTION_STRING`, every `AZURE_*` variable, `Database__ApiRoleObjectId`, `Authentication__Google__ClientSecret` and `ASPNETCORE_FORWARDEDHEADERS_ENABLED`.
 
@@ -137,6 +139,13 @@ The migration job gets the database's connection string (as its own identity, an
 | `LinkPreviews:RetryDelay` | No | The wait before the second attempt; each later attempt waits that much longer again. Default `00:00:05`. |
 | `LinkPreviews:MaxConcurrentFetches` | No | How many pages one instance fetches at the same time. Default 4. |
 | `LinkPreviews:QueueCapacity` | No | How many links may wait for a fetch on one instance; beyond it, new links go without a preview. Default 1000. |
+| `Push:Fcm:ProjectId` | With `Push:Fcm:CredentialFile` | The Firebase (Google Cloud) project push notifications are sent through, such as `passel-12345`. With `Push:Fcm:CredentialFile` it turns push on; set alone, or not a project id Google would give (lower-case letters, digits and hyphens, an older domain-scoped id such as `example.com:passel`, or the project number), the API refuses to start. Unset by default, which leaves push off. |
+| `Push:Fcm:CredentialFile` | With `Push:Fcm:ProjectId` | The path of the JSON key of the service account the API sends with, which needs the Firebase Cloud Messaging API Admin role on the project and nothing else. The API refuses to start when it is set alone, missing, unreadable, or not a service account's key. `compose.push.yaml` sets it to `/run/secrets/fcm-credential`. Unset by default. |
+| `Push:MaxAttempts` | No | How often one notification is sent before it is dropped, from 1 to 10; only 429 and 5xx answers, timeouts and connection errors are tried again. Default 3. |
+| `Push:RetryDelay` | No | The wait before the second attempt; each later one waits twice as long, or as long as FCM's `Retry-After` when that is longer. Default `00:00:02`. |
+| `Push:MaxRetryAfter` | No | The longest `Retry-After` the sender waits for; FCM asking for longer drops the notification. Default `00:01:00`. |
+| `Push:MaxConcurrentSends` | No | How many packets one instance sends notifications for at the same time, from 1 to 64. Default 4. |
+| `Push:QueueCapacity` | No | How many packets may wait for their notifications on one instance; beyond it, new packets notify no one. Default 1000. |
 | `Database:ApiRole` | No | Only read by `db-migrate`: the role the API logs in as, which it grants the API's DML-only privileges. See [Schema in production](../components/web-api.md#schema-in-production). |
 | `Database:ApiRoleObjectId` | No | Only read by `db-migrate`: the Microsoft Entra object id of the API's managed identity, so the role is created as its Entra principal. |
 
