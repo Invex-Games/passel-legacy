@@ -1,6 +1,6 @@
 # ADR 0005: Push notifications on Android
 
-**Status:** proposed, November 2026. Nothing here is built yet. **Decides:** how a packet sent from one device becomes a notification on the owner's Android phones: what the API sends, through what, to which devices, carrying what, and what the owner sets up once. It covers roadmap packages 2.B1 (the sender, Android half) and 2.D3 (the app). Web Push for the extension and the web app (2.E2) follows the same shape later and is left out here.
+**Status:** proposed, November 2026. The API half, 2.B1, is built: the source device on packets, the push queue and worker, the FCM client, the options, the compose overlay and its checks ([Push notifications](../components/web-api.md#push-notifications)). It merges dark, sending nothing until a stack has a key. A `400` counts as a dead token when its `google.rpc.BadRequest` detail names `message.token`, which is how the sender tells a bad token from a bad message. The app, 2.D3, is not built yet. **Decides:** how a packet sent from one device becomes a notification on the owner's Android phones: what the API sends, through what, to which devices, carrying what, and what the owner sets up once. It covers roadmap packages 2.B1 (the sender, Android half) and 2.D3 (the app). Web Push for the extension and the web app (2.E2) follows the same shape later and is left out here.
 
 ## Context
 

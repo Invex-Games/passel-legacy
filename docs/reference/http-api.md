@@ -80,6 +80,12 @@ A `File` packet sends a file uploaded to [`POST /api/parcels`](#post-apiparcels)
 
 A `parcelId` that isn't one of the caller's uploaded files (another user's, one still uploading, one discarded or expired, or not an id at all) gets **400** with a validation problem on `parcelId`. A missing file and another user's get the same answer, so ids can't be probed. A file that is already in a packet gets **409 Conflict** ("File already sent"): a file is sent once, so upload it again to send it twice. Two sends of the same file at the same moment get one 200 and one 409.
 
+Any kind of packet may also carry `deviceId`, the `id` of the caller's own device it is sent from, as [`POST /api/devices`](#post-apidevices) answered it. It is optional, and `null` or leaving it out says nothing about the source. The packet's push notification then goes to the caller's other devices and not to that one, and names it ("Link from Pixel 9"); without it every device of the caller with a push token is notified. An id that isn't one of the caller's devices (another user's, a removed one, or not an id at all) gets **400** with a validation problem on `deviceId`, the same answer for each, so ids can't be probed. The packet does not show its source in any response or event yet.
+
+```json
+{ "$type": "Link", "name": null, "url": "https://example.com/article", "deviceId": "Kq3nVb7RtYx9PzLmW2cD4fH" }
+```
+
 Validation failures return a validation problem keyed by field. A create that would exceed the caller's quota returns 429 or 413; see [Limits](#limits). A File packet counts against the packet quota for its name only; its bytes count against the file quota when uploaded.
 
 ### `DELETE /api/packets/{id}`
@@ -104,7 +110,7 @@ A stream also ends when the token that opened it would stop validating (its `exp
 
 ## Devices
 
-A device is one installation of a client (the Android app, the extension in one browser profile, the web app in one browser) signed in as one user. Clients register on every start and may give the API a push token, which the API will use to tell the device that something arrived (push sending is not built yet). Every device endpoint lives under `/api/devices` and acts only on the caller's own devices; another user's device is answered as a missing one, with **404**.
+A device is one installation of a client (the Android app, the extension in one browser profile, the web app in one browser) signed in as one user. Clients register on every start and may give the API a push token, which the API uses to tell the device that something arrived: an Android device with an FCM token gets a notification for each packet the user sends from another device, once the server has push configured. Web Push to the extension and the web app is not built yet. Every device endpoint lives under `/api/devices` and acts only on the caller's own devices; another user's device is answered as a missing one, with **404**.
 
 | Field | Description |
 |---|---|
@@ -193,7 +199,7 @@ A body without `$type`, such as `PushSubscription.toJSON()` sent as it is, gets 
 
 ### `DELETE /api/devices/{id}/push`
 
-Removes the device's push token and returns **204**, also when it had none. Returns 404 for a device the caller doesn't have.
+Removes the device's push token and returns **204**, also when it had none. Returns 404 for a device the caller doesn't have. The API also removes a token itself when FCM says it is no longer registered, but only while the device still holds that token, so one registered again in the meantime stays.
 
 ### Conflicts
 

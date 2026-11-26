@@ -28,7 +28,7 @@ The version tag is the one deployed and rolled back to. It never moves: a build 
 | `db-roles` | `postgres:18` | Once per deploy | `db/roles.sh` as the superuser: creates or updates the `passel_owner` and `passel_api` logins with the passwords in `.env`, and makes `passel_owner` the database's owner |
 | `parcels-init` | `busybox` | Once per deploy | Creates the parcels directory in the `parcels` volume, owned by the API's user (1654) and readable by it alone |
 | `db-migrate` | `passel-webapi` | Once per deploy, unless skipped | `db-migrate` as `passel_owner`: applies the schema and grants `passel_api` the API's DML-only privileges ([Schema in production](../components/web-api.md#schema-in-production)) |
-| `api` | `passel-webapi` | Always | The API as `passel_api`, keeping uploaded files in the `parcels` volume (`Parcels:Store=FileSystem`). Healthy when `/health`, which checks the database too, answers 200 |
+| `api` | `passel-webapi` | Always | The API as `passel_api`, keeping uploaded files in the `parcels` volume (`Parcels:Store=FileSystem`), and with `compose.push.yaml` sending push notifications with the key it mounts. Healthy when `/health`, which checks the database too, answers 200 |
 | `web` | `passel-web` | Always | The web app |
 | `edge` | `caddy:2.10-alpine` | With the `edge` profile | TLS for both hosts on ports 80 and 443, with certificates from Let's Encrypt |
 | `dashboard` | `aspire-dashboard` | With the `telemetry` profile | A telemetry viewer on the server's loopback |
@@ -126,6 +126,7 @@ Once, as an administrator on the server, then on GitHub. These steps set up prod
 8. **The packages.** After the first build of `main` has pushed them, make `passel-webapi`, `passel-web` and `passel-deploy` private (the package's settings on GitHub). Leave this repository's role under Manage Actions access as the first push set it, Admin, or at least Write, or leave the package inheriting access from the repository: the `Build` workflow pushes every later release to the same packages with its own token, and a Read role makes those pushes fail. The deploy job only reads them, with its own token, and the server signs in with that token for the one deploy only.
 9. **Google.** Add `https://<WEB_HOST>` to the Google web client's Authorized JavaScript origins ([Google OAuth Clients](../getting-started/google-oauth.md)).
 10. **The first deploy.** Run the `DeployCompose` workflow from `main` with `target` set to `production` and the tag left blank. Then `https://<API_HOST>/health` should answer `Healthy`, and signing in at `https://<WEB_HOST>/app/` should show an empty feed.
+11. **Push notifications**, when the Android app should hear of new packets: [Push notifications](#push-notifications). A stack without them runs as before, with push off.
 
 ### Pre-prod and production on one server
 
@@ -168,7 +169,7 @@ WEB_PORT=18083
 DASHBOARD_PORT=18890
 ```
 
-The project name keeps the containers, networks and volumes apart (`passel-preprod_pgdata` beside `passel_pgdata`); the subnets must not overlap production's or any other Docker network's (`docker network inspect $(docker network ls -q) --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'` lists them). Add pre-prod's web origin to a Google web client too; a separate client for pre-prod keeps its sign-ins apart.
+Push notifications, if pre-prod sends them, use pre-prod's own key at `/opt/passel-preprod/fcm-credential.json` ([Push notifications](#push-notifications)). The project name keeps the containers, networks and volumes apart (`passel-preprod_pgdata` beside `passel_pgdata`); the subnets must not overlap production's or any other Docker network's (`docker network inspect $(docker network ls -q) --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'` lists them). Add pre-prod's web origin to a Google web client too; a separate client for pre-prod keeps its sign-ins apart.
 
 **The proxy.** Only one stack can have the bundled edge, since it binds the server's 80 and 443. With two stacks, put both behind one proxy: your own Caddy container, below, or a proxy on the host with `compose.ports.yaml`, pre-prod on its own ports.
 
@@ -246,6 +247,30 @@ docker inspect <caddy> --format '{{(index .NetworkSettings.Networks "proxy").IPA
 
 and set it as a `/32` in both stacks' `.env`. Docker gives a container a new address when it is recreated, unless its own compose file fixes one (`ipv4_address` on the network, which needs a subnet on the network); otherwise check the address after recreating Caddy, since a stale one makes every client look like the proxy. Trusting the whole network's CIDR instead means any container on it can set a client address, which is acceptable only if nothing else runs on it.
 
+### Push notifications
+
+The API sends a notification through Firebase Cloud Messaging to a user's other Android devices for each new packet ([Push notifications](../components/web-api.md#push-notifications)). It needs a service account key, which is a file rather than a setting, so it comes through an overlay, `compose.push.yaml`, that a stack with a key adds to `COMPOSE_FILE`. Without the overlay the API starts with push off. The Firebase project and the service account are set up once, as [ADR 0005](../decisions/0005-push-notifications-on-android.md#what-the-owner-does-once) describes; make one key per stack and never put one in the repository.
+
+1. **The key.** Copy the service account's JSON key to the stack's root, beside `.env`, readable by the API's user (1654) alone. The deploy user can then not read it, which is intended:
+
+   ```
+   sudo install -o 1654 -g 1654 -m 400 passel-fcm-key.json /opt/passel/fcm-credential.json
+   ```
+
+   Pre-prod has a key of its own at `/opt/passel-preprod/fcm-credential.json`, from a service account of its own (or at least a key of its own, so one can be revoked without the other). Delete the downloaded copy once it is on the server.
+2. **The settings.** In the stack's `.env`, add `compose.push.yaml` to `COMPOSE_FILE` after the proxy's files, and set `FCM_PROJECT_ID` to the Firebase project:
+
+   ```
+   COMPOSE_FILE=compose.yaml:compose.push.yaml
+   FCM_PROJECT_ID=passel-12345
+   ```
+
+   `compose.yaml:compose.ports.yaml:compose.push.yaml` and `compose.yaml:compose.external-proxy.yaml:compose.push.yaml` work the same. The overlay mounts the key at `/run/secrets/fcm-credential` as the `fcm-credential` secret and sets `Push__Fcm__ProjectId` and `Push__Fcm__CredentialFile` on the API. `FCM_CREDENTIAL_FILE` moves the key elsewhere; compose reads a relative path from the release directory, so the default, `../../fcm-credential.json`, is the root. Set it to the full path to run compose by hand from `current`, where `../..` is not the root.
+3. **Deploy.** `deploy.sh` checks first, before it pulls or starts anything, that `FCM_PROJECT_ID` is set and that the key is there and readable by 1654 (from its owner and mode, since the deploy user can't open it), and stops with a message saying which is wrong. The API itself refuses to start when the key can't be read or is not a service account's key, or the project id is not one Google would give, so a bad key shows up as an unhealthy deploy with the reason in the API's log.
+4. **Check it.** With the app registered on a phone, send something from another device: the phone shows "Link from ..." or "Note from ...". An Error from `PushWorker` naming a 401 or 403 means the key, its role or the project is wrong; the tokens are kept, so nothing is lost by fixing it and sending again.
+
+To rotate the key, install the new one over the old (same owner and mode) and restart the API (`dc restart api`, or deploy again); the API reads the file once. To turn push off, take `compose.push.yaml` out of `COMPOSE_FILE` and deploy. A rollback to a release from before the overlay existed fails at once with the overlay still listed, since that release has no `compose.push.yaml`: take it out of `COMPOSE_FILE` first.
+
 ### The DeployCompose workflow
 
 `DeployCompose` runs on manual dispatch only (Actions, DeployCompose, Run workflow). It has three inputs:
@@ -297,7 +322,7 @@ cd /opt/passel/current
 docker compose --env-file /opt/passel/.env --env-file /opt/passel/release.env ps
 ```
 
-Relative paths such as `../../.env` don't work from `current`: it is a link, and compose resolves them against the path you changed to, `/opt/passel/current`, not the release directory it points at, so `../../.env` would be `/opt/.env`.
+Relative paths such as `../../.env` don't work from `current`: it is a link, and compose resolves them against the path you changed to, `/opt/passel/current`, not the release directory it points at, so `../../.env` would be `/opt/.env`. The push overlay's default key path, `../../fcm-credential.json`, has the same problem: with `compose.push.yaml` in `COMPOSE_FILE`, set `FCM_CREDENTIAL_FILE` in `.env` to the key's full path before running compose by hand, or anything that creates the API's container from there fails on a missing secret file.
 
 ### Logs and telemetry on the server
 
@@ -337,6 +362,8 @@ To restore, or to rehearse a restore on a spare server, from `/opt/passel/curren
 | `deploy-gate: refused` | The request was not exactly `deploy <tag>` or `deploy <tag> --no-migrate`, or the tag has a character outside letters, digits, `.`, `_` and `-` |
 | The workflow fails before connecting, saying an image is not in the registry | The tag was never pushed: only builds of `main` push, and the build may still be running |
 | `Host key verification failed` | `DEPLOY_KNOWN_HOSTS` doesn't hold the server's current host key |
+| `deploy.sh: COMPOSE_FILE adds compose.push.yaml but ...` | The push overlay is listed and `FCM_PROJECT_ID` is unset, or the key is not at `<root>/fcm-credential.json` (or `FCM_CREDENTIAL_FILE`) owned by 1654 with mode 400 ([Push notifications](#push-notifications)) |
+| The API is unhealthy and its log says `Push:Fcm:...` | The key can't be read or isn't a service account's key, the project id is malformed, or only one of the two settings reached the API |
 | `db-roles` fails to sign in | `POSTGRES_PASSWORD` was changed in `.env` after the database was created; the image only uses it the first time. Put the old one back, or first run `ALTER ROLE postgres PASSWORD '<new>'` with `dc exec postgres psql -U postgres` |
 | `db-migrate` fails with permission denied | It ran as another login than `passel_owner`, or the tables belong to another role (a restore without `--no-owner`) |
 | The API never becomes healthy and its log names the schema | The schema lacks a table, column or function the API needs: `db-migrate` didn't run, or the deploy used `--no-migrate` for a release whose migration never ran |
