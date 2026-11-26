@@ -63,4 +63,4 @@ The API, the web app and PostgreSQL run as one Docker Compose project on the own
 
 - Removing the Azure path once the server has run for a while.
 - An S3-compatible parcel store, should the files outgrow one disk.
-- How a staging environment would be named and built, given one web image per environment.
+- ~~How a staging environment would be named and built, given one web image per environment.~~ Settled: the web image reads its configuration when its container starts, so one image serves every environment, and pre-prod is a second stack beside production ([Pre-prod and production on one server](../guides/deploying.md#pre-prod-and-production-on-one-server)).
