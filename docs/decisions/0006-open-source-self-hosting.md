@@ -51,12 +51,12 @@ Sign-in goes through a central OAuth project that the owner runs. Google comes f
 
 1. The client asks the server for a nonce: `POST /api/auth/nonce`. The nonce is random, single-use, and expires after a few minutes.
 2. The client puts the nonce in the provider's sign-in request and gets back an ID token that carries it.
-3. The client sends the ID token to `POST /api/auth/exchange`. The server checks five things: the signature, the issuer, the audience (one of the trusted client ids), the expiry, and that the nonce is one it issued and has not used yet. Then it returns a short-lived access token and a rotating refresh token, both its own, tied to a device. This is roadmap 1.B1, which was already planned.
+3. The client sends the ID token to `POST /api/auth/exchange`. The server checks five things: the signature, the issuer, the audience (one of the trusted client ids), the expiry, and that the nonce is one it issued and has not used yet. Then it returns a short-lived access token and a rotating refresh token, both its own, tied to a device. This is roadmap S2.B1, formerly 1.B1, which was already planned.
 4. From then on, the provider's ID token is never sent again.
 
 Every server shares the same audiences. Without the nonce, an ID token that one server received could be replayed to another. The nonce stops that.
 
-**Binding the nonce to the server.** A nonce alone doesn't stop a server the user signs in to from relaying. That server can fetch a nonce from another server and hand it to the client as its own. So the client doesn't send the server's nonce to the provider directly. It sends SHA-256 of the server's origin, as the client itself reached it, joined to the nonce. The server recomputes the hash from its own `PUBLIC_URL`. A token obtained through a relaying server then carries that server's origin, and is refused anywhere else. This record added the binding, and the owner accepted it with the rest. Spike 4 checks that the clients can carry it.
+**Binding the nonce to the server.** A nonce alone doesn't stop a server the user signs in to from relaying. That server can fetch a nonce from another server and hand it to the client as its own. So the client doesn't send the server's nonce to the provider directly. It sends SHA-256 of the server's origin joined to the nonce. The client takes the origin it fetched discovery from, in canonical form: lower-case scheme and host, with the default port left out. The server recomputes the hash from its own `PUBLIC_URL`, in the same form. A server is therefore reached under the one origin in `PUBLIC_URL`, and the app refuses a discovery document fetched from any other. A token obtained through a relaying server then carries that server's origin, and is refused anywhere else. This record added the binding, and the owner accepted it with the rest. Spike 4 checks that the clients can carry it.
 
 **User identity.** Users are keyed by the issuer and subject pair, not by email. Two providers can then link to one account later. Users who exist today are keyed by Google's `sub` alone. A migration gives each of them Google's issuer, and their ids don't change.
 
@@ -70,7 +70,7 @@ An email allowlist matches only a verified address (`email_verified`) from the p
 
 **The web app and the extension.**
 
-- **The extension** can use a central client. Its Google redirect, `https://<extension id>.chromiumapp.org/`, is fixed by the manifest key, so one extension client in the central project serves every server. That sets it apart from the web app, because its redirect doesn't depend on the server. QR pairing works for it too, as a fallback.
+- **The extension** can use a central client. Its Google redirect, `https://<extension id>.chromiumapp.org/`, depends only on the extension's id, so one extension client in the central project serves every server ([The extension](#the-extension) covers the Web Store's id). That sets it apart from the web app, because its redirect doesn't depend on the server. QR pairing works for it too, as a fallback.
 - **The web app** can't use a central client. Google's web clients list their JavaScript origins, and the central project can't list every self-hoster's. There are two routes:
   - **QR pairing**, the preferred route. The web app shows a QR code, the signed-in phone scans it and approves, and the server hands the browser its own session. Nothing is needed from Google.
   - **The self-hoster's own Google web client.** It is set on the server as one more trusted audience, and discovery offers it to the web app.
@@ -167,7 +167,9 @@ The extension asks for its server's origin at runtime, through `optional_host_pe
 
 The manifest sets no content security policy today, so Manifest V3's default applies, and that doesn't restrict `connect-src`. If a policy is added, its `connect-src` must allow the server's origin. A manifest can't name an origin chosen at runtime, so that means allowing `https:` in general. The runtime host permission is what narrows the extension to one server.
 
-The extension is published on the Chrome Web Store, keeping its fixed id. Loading it unpacked from a release's zip is the fallback.
+The extension is published on the Chrome Web Store. Loading it unpacked from a release's zip is the fallback.
+
+The Web Store gives the item its own id when the extension is first uploaded, and an uploaded manifest can't choose that id with a `key`. So the store's id may not be `aikjdmilnbdacmaeahelifppjjgppemj`. The central extension client lists every redirect URI in use: the store item's, and the one that unpacked builds get from the manifest key. Alternatively, the manifest key is replaced with the Web Store's public key, so that unpacked builds get the store's id. Roadmap S5.A1 confirms which, against the Web Store's upload rules, before the first upload.
 
 ### Packaging for self-hosters
 
