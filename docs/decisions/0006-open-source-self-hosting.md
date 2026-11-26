@@ -94,11 +94,11 @@ Each server chooses one push mode and reports it in discovery. The app sets itse
 
 **Web Push serves the browsers too.** The extension and the web app subscribe with Chrome's own Push API. Their subscriptions are `DevicePush.WebPush`, the case the registry already has, and the same Web Push sender delivers to them whatever the server's mode. Chrome's push service is run by Google, but it needs no Firebase project from the self-hoster.
 
-**VAPID keys.** The server generates its key pair on first start and keeps it beside its data. It never changes the key pair, because every browser and UnifiedPush subscription is tied to the public key. Discovery publishes that key.
+**VAPID keys.** The server generates its key pair on first start and keeps it in its database, so a backup carries it with the subscriptions that depend on it. Nothing else generates or supplies one: the setup script doesn't, and there is no setting for it. It never changes the key pair, because every browser and UnifiedPush subscription is tied to the public key. Discovery publishes that key.
 
 **The Web Push sender** posts to whatever endpoint a client registered. As the [device registry](../components/web-api.md#device-registry) already says, it must check the addresses an endpoint resolves to, as the link preview fetcher does.
 
-**The payload.** A UnifiedPush or Web Push message is data only: nothing shows it unless the app or the service worker does. So the app builds the notification itself, with `flutter_local_notifications`, from a payload that carries the same fields as today. That brings back the data-only path ADR 0005 set aside. Each message also names its recipient: the id of the device it was sent to, and the sending server's origin. The app shows a message only when both match the registration it holds at that moment, and otherwise drops it. A device belongs to one account on one server, and a registration under another account or on another server is a different device, so a message queued for the previous account or server is never shown. That closes the window ADR 0005 accepted after a sign-out. In `fcm` mode the server may keep sending notification messages, or move to data only so that both modes behave the same. Phase 3 settles which. The payload is a contract, so it carries a version ([Versioning](#versioning)).
+**The payload.** Every push is data only, in every mode: nothing shows it unless the app or the service worker does. UnifiedPush and Web Push messages are data only by nature, and in `fcm` mode the server sends data-only messages too, at high priority, in place of ADR 0005's notification messages. An FCM notification message is shown by Android without running the app, so it would get past the recipient check below. So the app builds the notification itself, with `flutter_local_notifications`, from a payload that carries the same fields as today. That brings back the data-only path ADR 0005 set aside. Each message also names its recipient: the id of the device it was sent to, and the sending server's origin. The app shows a message only when both match the registration it holds at that moment, and otherwise drops it. A device belongs to one account on one server, and a registration under another account or on another server is a different device, so a message queued for the previous account or server is never shown. That closes the window ADR 0005 accepted after a sign-out, in every mode, because no message reaches the screen without that check. The payload is a contract, so it carries a version ([Versioning](#versioning)).
 
 **Spikes.** Three questions are tested before any of this is built ([Spikes](#spikes)):
 
@@ -177,7 +177,7 @@ The Web Store gives the item its own id when the extension is first uploaded, an
 
 **Setup.** Each release attaches a compose bundle to its GitHub Release. The bundle holds three things:
 
-- a script that generates the `.env`: it asks for the server's URL and the owner's email, and generates the passwords, the Sqids alphabet and the VAPID keys
+- a script that generates the `.env`: it asks for the server's URL and the owner's email, and generates the passwords and the Sqids alphabet. The VAPID keys are the server's own ([Push](#push-chosen-per-server))
 - an optional overlay with Caddy for automatic TLS
 - the push overlays
 
@@ -239,7 +239,7 @@ The owner made the decisions above. This record added the details below to make 
   - **The Firebase config written by Atom at build time:** the app starts Firebase at runtime from discovery instead.
   - **One Firebase project for both packages:** each self-hoster has their own project, or none.
   - **The owner's setup steps** that assume Play App Signing.
-  - **The message type:** UnifiedPush and Web Push need data-only messages.
+  - **The message type:** every push is data only, FCM included, so the app builds each notification after checking its recipient.
 
   The API half of 0005 stands: the sender, the queue, `SourceDeviceId`, the answers from FCM and the overlay. So does most of the app's registration flow.
 - **The MIT license:** the repository moves to AGPL-3.0 ([Decided by the owner](#decided-by-the-owner)). Roadmap S4.A4 makes the change.

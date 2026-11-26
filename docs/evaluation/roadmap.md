@@ -93,11 +93,11 @@ Goal: anyone can run Passel on their own server and install one app and one exte
 
 | Package | Lane | What | Size | Depends on | Touches | Source |
 |---|---|---|---|---|---|---|
-| S1.B1 | B | `/.well-known/passel`: the server version, API versions, the lowest client version, the sign-in providers, the push mode with its public options, and the features. `PUBLIC_URL` as the base setting, with the allowed host and the origins derived from it | M | | new endpoint, `HostWebExtensions.cs`, options | ADR 0006 |
+| S1.B1 | B | `/.well-known/passel`: the server version, API versions, the lowest client version, the sign-in providers, the push mode with its public options, and the features. `PUBLIC_URL` as the base setting, with the allowed host and the origins derived from it. The bundled edge (`deploy/compose/edge/Caddyfile`) and the guide's own-proxy Caddyfiles also send `/.well-known/passel` on the web host to the API, so discovery answers on both origins before S4.A1 merges them | M | | new endpoint, `HostWebExtensions.cs`, options, `deploy/compose/edge/`, `docs/guides/deploying.md` | ADR 0006 |
 | S1.A1 | A | Versioning: `api-version` on the API, oasdiff on `contracts/openapi.json` in `Validate`, and contract tests against the images of the last one or two releases | M | S1.B1 | `contracts/`, `_atom/`, `.github/` | ADR 0006 |
 | S1.D1 | D | A first-run server screen (URL or QR), the discovery client, the version and feature checks, and a server switcher. The server URL leaves the release dart-defines | M | S1.B1 | `lib/config/`, new `lib/server/` | ADR 0006 |
 | S1.C1 | C | The server origin at runtime through `optional_host_permissions`, with the discovery client from `@passel/core` | M | S1.B1 | `manifest.json`, `build.mjs`, `background.ts` | ADR 0006 |
-| S1.E1 | E | The web app reads discovery from its own origin, and Settings shows the "Add a device" QR code | S | S1.B1 | `src/web` | ADR 0006 |
+| S1.E1 | E | The web app reads discovery from its own origin, which S1.B1 routes to the API, and Settings shows the "Add a device" QR code | S | S1.B1 | `src/web` | ADR 0006 |
 
 ### S2: the token exchange
 
@@ -113,7 +113,7 @@ Goal: anyone can run Passel on their own server and install one app and one exte
 | Package | Lane | What | Size | Depends on | Touches | Source |
 |---|---|---|---|---|---|---|
 | S3.X | D | Spikes: FlutterFire from runtime options with no `google-services.json` (background isolate and release build included), one package in several Firebase projects, switching servers, and UnifiedPush with ntfy | M | | none | ADR 0006 spikes 1, 2, 3, 5 |
-| S3.B1 | B | The push mode setting and its discovery block. The Web Push sender (RFC 8030 and 8291, VAPID keys generated on first start and kept, endpoint addresses checked like the preview fetcher's) beside the existing FCM sender. A versioned, data-only payload | M | S1.B1 | `Services/`, options, `compose.push.yaml` | ADR 0006; was 2.B1's Web Push |
+| S3.B1 | B | The push mode setting and its discovery block. The Web Push sender (RFC 8030 and 8291, VAPID keys generated on first start and kept in the database, endpoint addresses checked like the preview fetcher's) beside the existing FCM sender, which moves from notification messages to data-only ones. A versioned payload that names its recipient device and server | M | S1.B1 | `Services/`, options, `compose.push.yaml` | ADR 0006; was 2.B1's Web Push |
 | S3.D1 | D | Device registration, Firebase started at runtime in `fcm` mode, UnifiedPush in `unifiedpush` mode, notifications built in the app, and the permission sheet. Was 2.D3 | L | S3.X, S3.B1, S2.D1 | new `push/` | ADR 0005, 0006 |
 | S3.C1, S3.E1 | C, E | Web Push from the extension's service worker and the web app's. Was part of 2.E2 | M | S3.B1 | `background.ts`, `src/web` | ADR 0006 spike 6 |
 
