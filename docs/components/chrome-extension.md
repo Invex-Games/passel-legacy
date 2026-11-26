@@ -72,6 +72,9 @@ The only host permission is the API's origin (see [Build](#build)). The side pan
 
 ## Build
 
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#the-extension), one extension works with every server. It asks for the server's origin at runtime through `optional_host_permissions`, instead of having `host_permissions` generated from `API_URL`. Its client id becomes the central OAuth project's, which every server trusts. That works because the redirect URI is fixed by the manifest key.
+
 `build.mjs` bundles `src/background.ts`, `src/popup.ts` and `src/popup.css` into `dist/`, following the workspace packages into the bundle, copies `static/` alongside them, and writes `sidepanel.html` from `popup.html`. It needs two values and takes a third. Values already in the environment take precedence over a local `.env`:
 
 | Variable | Value |

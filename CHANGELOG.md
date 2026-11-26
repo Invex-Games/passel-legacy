@@ -18,6 +18,15 @@ All notable changes to Passel. The format follows [Keep a Changelog](https://kee
 
 ### Added
 
+- ADR 0006: Passel moves to an open-source, self-hosted model. Nothing is built yet. The decisions:
+  - **Clients:** one prebuilt app per release channel and one extension work with any server. The user enters the server's URL or scans the web app's QR code, and the client configures itself from `/.well-known/passel`.
+  - **Sign-in:** goes through a central OAuth project, with a token exchange that takes a server-issued nonce bound to the server's origin. Users are keyed by issuer and subject, and registration is closed by default.
+  - **Push:** each server chooses `none`, `fcm` (a Firebase project of its own, started in the app at runtime) or `unifiedpush` (Web Push, which also serves the extension and the web app).
+  - **Versioning:** the API is versioned with an oasdiff check in CI.
+  - **Channels:** the flavors become the `dev`, `beta` and `stable` channels, and signed APKs go on GitHub Releases instead of a Play listing.
+  - **Packaging:** public multi-arch images, a compose bundle per release, and one `PUBLIC_URL`.
+
+  The owner also settled the questions the ADR left open: the license moves to AGPL-3.0, the owner's stacks deploy over Tailscale, there is no push relay for now, QR pairing is the web app's default sign-in, and Apple waits until there is an iOS app. The superseded parts of ADRs 0002, 0004 and 0005 are marked. The roadmap gains Phase S, and the pages that describe the current build link to the ADR where it will change them.
 - Push notifications from the API to the Android app through Firebase Cloud Messaging: each new packet sends one notification to every other Android device of its owner that has given the API a token, saying "Link from Pixel 9" with the link's host, or "Note from ..." or "File from ..." with nothing of the content, and opening the packet by its id. It is off until the server has a Firebase project and a service account key (`Push:Fcm:ProjectId` and `Push:Fcm:CredentialFile`, which the compose deployment takes through the new `compose.push.yaml` overlay and `FCM_PROJECT_ID`), and the API refuses to start with only one of them or with a key it cannot use. A token FCM calls unregistered is removed from its device unless the device has registered another since, failures that may pass are retried a few times with the waits FCM asks for, and nothing in the logs shows a token or the text of a message. The app does not register for notifications yet.
 - `POST /api/packets` takes an optional `deviceId`, the caller's own device the packet is sent from, which the packet keeps so that its notification skips that device and names it; an id that is not one of the caller's devices is a validation problem.
 - The Android app is a share target: "Send to Passel" appears in the share sheet for text and links and in the text selection menu, and opens the send sheet filled in. The extension's screens use the same Send, link and note wording as the app.

@@ -51,6 +51,8 @@
             href: decisions/0004-hosting-on-docker-compose.md
         -   name: 0005 Push notifications on Android
             href: decisions/0005-push-notifications-on-android.md
+        -   name: 0006 Open source and self-hosted
+            href: decisions/0006-open-source-self-hosting.md
 -   name: Evaluation
     href: evaluation/index.md
     items:

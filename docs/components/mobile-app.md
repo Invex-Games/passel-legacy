@@ -37,6 +37,9 @@ The feed page's app bar has a settings action beside the sign-in or sign-out act
 
 ## Configuration
 
+> [!NOTE]
+> Today every value is compiled in. Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#one-app-and-one-extension-for-every-server), the app gets its server at runtime, typed in or scanned from a QR code, and configures sign-in and push from the server's `/.well-known/passel`. Only the development values stay dart-defines. Roadmap phase S1 makes the change.
+
 Values are compiled in with `--dart-define` or `--dart-define-from-file`. Nothing is bundled as an asset.
 
 | Key | Required | Value |
@@ -52,6 +55,9 @@ Copy `.env.example` to `.env` for local runs. If a value is passed both in the f
 `AppConfig` checks the values at start-up and shows `ConfigErrorPage` instead of the app when one is missing or can't be used in the flavor: the production flavor needs an `https://` API URL and refuses a tunnel token and a development user, and the development flavor allows an `http://` URL only to `localhost`, `127.0.0.1` and `10.0.2.2`, the hosts its network security configuration permits cleartext to.
 
 ## Flavors
+
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#release-channels-instead-of-flavors), the flavors become the release channels `dev`, `beta` (`com.invex.passel.mobileapp.beta`, which installs beside stable) and `stable`. Beta and stable are signed with the release key alone, and there is no Play App Signing. Roadmap phase S5 makes the change.
 
 | Flavor | Application id | App name | Signing |
 |---|---|---|---|

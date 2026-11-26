@@ -143,6 +143,9 @@ The sender reads the platform and the token. When FCM says a token is gone, it c
 
 ## Push notifications
 
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#push-chosen-per-server), FCM is one of several push modes, chosen per server and reported in discovery. A Web Push sender, with VAPID keys that the server generates on first start, serves UnifiedPush, the extension and the web app. Roadmap phase S3 makes the change.
+
 A new packet is announced to the owner's other Android devices through Firebase Cloud Messaging, so a phone hears of it with the app closed, where the event stream doesn't reach (roadmap 2.B1, [ADR 0005](../decisions/0005-push-notifications-on-android.md)). It is off until `Push:Fcm:ProjectId` and `Push:Fcm:CredentialFile` are both set; with neither, nothing is queued and `PushWorker` logs once that push is off, and with only one of them, a project id Google would not give, or a credential file that can't be read or is not a service account's key, the API refuses to start (`PushOptionsValidator`). See [Configuration](../reference/configuration.md#web-api).
 
 - **Where a packet came from.** `POST /api/packets` takes an optional `deviceId`, the encoded id of one of the caller's own devices; another user's, a removed one or an id that names none is a validation problem on `deviceId`, checked before the quota. The packet keeps it as `SourceDeviceId`, which no response or event carries yet. A link's preview keeps it too.
@@ -191,6 +194,9 @@ Whether a parcel has been sent is not a status: it is `AttachedPacketId`. Three 
 Thumbnails use [SkiaSharp](https://github.com/mono/SkiaSharp) 3.119.4 (MIT), with `SkiaSharp.NativeAssets.Linux.NoDependencies` for Linux: the `aspnet:10.0` image the API runs on has no fontconfig, and that build of `libSkiaSharp.so` needs only libc, libm, libdl and libpthread (no text is drawn). The Windows and macOS native assets come with SkiaSharp itself, for local development. ImageSharp was ruled out: from 3.2.0 its Release builds require a Six Labors licence key, and 3.1.12 fails restore on known advisories.
 
 ## Authentication
+
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#sign-in), clients stop sending Google ID tokens as bearer tokens. They exchange one once, with a nonce the server issued and bound to its origin, for Passel's own access and refresh tokens. Users are keyed by issuer and subject, and registration is closed by default. Roadmap phase S2 makes the change.
 
 Clients send a Google **ID token** as a bearer token. The API validates it against Google with these accepted audiences:
 

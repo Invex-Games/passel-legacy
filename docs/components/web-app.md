@@ -34,6 +34,9 @@ From `@passel/core`: `FeedStore`, `PacketsApi` (the packet endpoints over `fetch
 
 ## Sign-in
 
+> [!NOTE]
+> A central OAuth project can't list every self-hoster's origin. So under [ADR 0006](../decisions/0006-open-source-self-hosting.md#sign-in), the web app signs in by QR pairing from a signed-in phone, or with a Google web client that the self-hoster creates. QR pairing is the default.
+
 Google sign-in uses [Google Identity Services](https://developers.google.com/identity/gsi/web): the **Sign in with Google** button, and One Tap for someone who signed in on this browser before and didn't sign out. The ID token it returns is issued for the **web** client id, which is the API's main audience, so the API takes it as it is. Before accepting it, the session checks that it was issued by Google for that client id, carries the nonce this tab asked for, and hasn't expired; the API checks the signature.
 
 The token lives in the tab's session storage: a reload keeps it, closing the tab drops it. A Google ID token lasts an hour and can't be renewed without the user, so when it runs out, or the API refuses it, the app returns to the sign-in page saying the session expired and offers One Tap, which signs a returning user straight back in where Google allows it. First-party sessions with refresh tokens (roadmap 1.B1) will remove that hourly step.
@@ -47,6 +50,9 @@ While the tab is signed in and visible, the controller keeps the API's event str
 `packet-created`, `packet-deleted` and `packet-updated` go to the `FeedStore`, which applies them with the rules the extension and the mobile app share (`contracts/feed-scenarios.json`): a `packet-updated` event replaces a listed item in place and never adds one.
 
 ## Configuration at startup
+
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#packaging-for-self-hosters), the web app is served from the API's origin. It reads its server's `/.well-known/passel` instead of naming the API and a Google client id.
 
 The built site holds no environment's values, so one build, and one web image, serves every environment. Before anything else the app fetches `/app/config.json` from its own origin, revalidating it every time:
 

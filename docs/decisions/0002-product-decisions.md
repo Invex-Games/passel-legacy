@@ -17,7 +17,7 @@ The evaluation found the clients disagreeing on the order of the feed ([UX](../e
 ## Consequences
 
 - The mobile feed changes direction, which also changes the pull-to-refresh gesture; the hint text and the app bar behaviour follow.
-- Visible strings in both clients change; later packages keep to the vocabulary, and the privacy and terms pages and the store listings (1.E3, 2.A1) use it from the start.
+- Visible strings in both clients change; later packages keep to the vocabulary, and the privacy and terms pages and the store listings (1.E3, 2.A1) use it from the start. *The Play Store listing is dropped by [ADR 0006](0006-open-source-self-hosting.md#app-distribution), since the app is sideloaded from GitHub Releases. The Chrome Web Store listing stays.*
 - The web app work can start with the core extraction; nothing in the extension's behaviour changes until it consumes the package.
 - Parcels and the deployment pipeline can be designed against Azure services without a further decision.
 - Should hosting leave Azure, the parcel store swaps behind its interface and the deployment target changes; nothing in the clients depends on either.

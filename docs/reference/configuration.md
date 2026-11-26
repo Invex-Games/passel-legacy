@@ -18,6 +18,9 @@ The AppHost reads one setting of its own:
 
 ## Compose deployment
 
+> [!NOTE]
+> [ADR 0006](../decisions/0006-open-source-self-hosting.md#packaging-for-self-hosters) replaces `API_HOST`, `WEB_HOST` and the Google client ids that a server must supply with one base setting, `PUBLIC_URL`, which a setup script writes. It also adds the push mode and the registration settings. This table describes today's `.env` until roadmap phase S4 lands.
+
 The self-hosted deployment ([Releasing and Deploying](../guides/deploying.md#self-hosted-docker-compose)) reads every value from the stack's `.env`, `/opt/passel/.env` for production and `/opt/passel-preprod/.env` for a pre-prod stack beside it, whose template, with a comment on each key, is `deploy/compose/.env.example`; `release.env`, written by `deploy.sh`, adds `PASSEL_TAG`. `compose.yaml` gives the API, `db-migrate` and the web app an explicit environment built from those keys, never the whole file, so nothing else in `.env` reaches them.
 
 | `.env` key | Required | Becomes |
@@ -165,6 +168,9 @@ When you run the API outside the AppHost, put these in `src/webapi/Invex.Passel.
 
 ## Chrome extension
 
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#the-extension), the extension asks for its server's origin at runtime, and `API_URL` stays a development default only.
+
 `src/chrome-extension/.env` (template: `.env.example`) is only read by standalone builds; the AppHost supplies these values itself.
 
 | Key | Description |
@@ -185,6 +191,9 @@ When you run the API outside the AppHost, put these in `src/webapi/Invex.Passel.
 | `PORT` | The dev server's port (`npm run dev`, `npm run serve`). Default 5245. The AppHost sets it. |
 
 ## Mobile app
+
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#one-app-and-one-extension-for-every-server), release builds compile in nothing server-specific. The user enters the server's URL, or scans the web app's QR code. The client ids are the central OAuth project's, the same for every server. `API_BASE_URL` stays a development default only.
 
 `src/mobile_app/.env` (template: `.env.example`) is compiled in with `--dart-define-from-file`.
 

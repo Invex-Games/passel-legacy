@@ -6,6 +6,14 @@ The Azure deployment of [ADR 0003](../decisions/0003-hosting-on-azure.md) is sti
 
 ## Self-hosted (Docker Compose)
 
+> [!NOTE]
+> This section is the owner's own deployment. Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#packaging-for-self-hosters), a self-hosting guide for anyone becomes the front door of the docs, and this section becomes its worked example. Several things here change as the roadmap's phase S lands:
+>
+> - The images become public and multi-arch, with a moving `stable` tag, so the private packages of step 8 and the `linux/amd64` requirement go.
+> - One `PUBLIC_URL` and one origin replace `API_HOST` and `WEB_HOST`.
+> - Sign-in goes through the central OAuth project, so step 9's Google origins are needed only for a web client of your own.
+> - Deploys become automatic: to pre-prod from `main`, and to production from tags with approval. Both deploy by digest, with the runner reaching the gate over Tailscale ([ADR 0006](../decisions/0006-open-source-self-hosting.md#decided-by-the-owner)).
+
 ### Versions and tags
 
 Versions come from GitVersion and the conventional commit prefixes described in `CONTRIBUTING.md`; on `main` every commit has its own, such as `0.2.0-rc.12`. The `Build` workflow tests every push to `main`, then builds three images and pushes them to `ghcr.io/invex-games/`, each tagged with the version (`+` and `/` become `-`) and with `sha-` and the first seven characters of the commit:
@@ -130,6 +138,9 @@ Once, as an administrator on the server, then on GitHub. These steps set up prod
 
 ### Pre-prod and production on one server
 
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#release-channels-instead-of-flavors), pre-prod is just another server, and no app flavor is tied to it. The owner's beta install points at it, and nothing in the beta build names it. The stack layout below stands. What changes is the Google side: pre-prod's sign-ins go through the central OAuth project, so a Google web client of its own is needed only for the web app's sign-in without pairing.
+
 Pre-prod is a second, complete stack: its own directory, settings, database, files, Google origins and deploy key. It can run on its own server, set up exactly as above, or beside production on the same one, which needs the differences below. Only a separate server keeps what is deployed to pre-prod away from production's data: a deploy runs the release's `deploy.sh` as the deploy user, with the whole Docker daemon and so root on the server, and on a shared server that reaches production's volumes, containers and `.env` as well. So on one server a pre-prod deploy needs the same review as a production one (**GitHub**, below), and a pre-prod meant for unreviewed builds needs a server of its own. The same images serve both; only the server's `.env` tells them apart.
 
 **Layout.** Production stays in `/opt/passel`, and an `.env` from before pre-prod existed needs no change. Pre-prod lives in `/opt/passel-preprod`, created like step 3, with its own copy of the gate:
@@ -248,6 +259,9 @@ docker inspect <caddy> --format '{{(index .NetworkSettings.Networks "proxy").IPA
 and set it as a `/32` in both stacks' `.env`. Docker gives a container a new address when it is recreated, unless its own compose file fixes one (`ipv4_address` on the network, which needs a subnet on the network); otherwise check the address after recreating Caddy, since a stale one makes every client look like the proxy. Trusting the whole network's CIDR instead means any container on it can set a client address, which is acceptable only if nothing else runs on it.
 
 ### Push notifications
+
+> [!NOTE]
+> This is the `fcm` push mode of [ADR 0006](../decisions/0006-open-source-self-hosting.md#push-chosen-per-server), in the owner's own Firebase project. Each server chooses its mode: `none`, `fcm` with a Firebase project of its own, or `unifiedpush`. The server reports its mode in discovery, and the app starts Firebase at runtime from the options the server publishes.
 
 The API sends a notification through Firebase Cloud Messaging to a user's other Android devices for each new packet ([Push notifications](../components/web-api.md#push-notifications)). It needs a service account key, which is a file rather than a setting, so it comes through an overlay, `compose.push.yaml`, that a stack with a key adds to `COMPOSE_FILE`. Without the overlay the API starts with push off. The Firebase project and the service account are set up once, as [ADR 0005](../decisions/0005-push-notifications-on-android.md#what-the-owner-does-once) describes; make one key per stack and never put one in the repository.
 

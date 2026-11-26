@@ -2,6 +2,9 @@
 
 Every Passel client signs in with Google and sends the resulting **ID token** to the API as a bearer token. The API accepts a token only if its audience (`aud`) is one it knows about. That makes the client ids the one piece of configuration all three apps share.
 
+> [!NOTE]
+> This page describes today's build, in which each deployment creates its own Google clients and compiles their ids into the clients. Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#sign-in), every server trusts a central OAuth project that the owner runs. Clients exchange the provider's ID token once, with a nonce the server issued, for Passel's own tokens. A self-hoster creates a Google client only if they want the web app to sign in without QR pairing. This page changes when the token exchange lands (roadmap phase S2).
+
 ## The clients
 
 Create these in a Google Cloud project, under **APIs & Services → Credentials**. If you're joining the team, ask for the existing ids instead of creating new ones.

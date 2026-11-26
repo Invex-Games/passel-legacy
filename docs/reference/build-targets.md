@@ -19,6 +19,9 @@ Parameters can be passed on the command line (`--mobile-app-flavor production`),
 
 ## Release builds
 
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#what-this-supersedes), `BuildChromeExtension` and `BuildMobileAppAndroid` stop taking an API URL or client ids. The clients get their server at runtime, and the client ids are the central OAuth project's. `mobile-app-flavor` becomes the release channel (`dev`, `beta` or `stable`), and a release workflow publishes signed APKs to GitHub Releases. The images become multi-arch, with a `stable` tag.
+
 | Target | Output | Parameters |
 |---|---|---|
 | `BuildWebApi` | Published API, in `atom-publish/Invex.Passel.WebApi` | None |

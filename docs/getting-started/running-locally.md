@@ -93,6 +93,9 @@ The app has the API's URL compiled in, as the device will reach it. By default t
 
 This works because the API also listens for plain HTTP on port 5218 (the `https` launch profile, see `Properties/launchSettings.json`), and the development flavor of the app allows plain HTTP to `localhost`, `127.0.0.1` and `10.0.2.2` only (`android/app/src/development/res/xml/network_security_config.xml`). The app checks the URL at start-up: the development flavor rejects an `http://` URL to any other host, and the production flavor rejects every `http://` URL, so a store build can never talk to the API in the clear. Nothing leaves your machine; the phone reaches the API through the cable.
 
+> [!NOTE]
+> Under [ADR 0006](../decisions/0006-open-source-self-hosting.md#release-channels-instead-of-flavors), the development flavor becomes the `dev` release channel. The production flavor becomes the `beta` and `stable` channels, which take their server at runtime instead of from `API_BASE_URL`.
+
 The development flavor installs as **Passel Dev** (`com.invex.passel.mobileapp.dev`), alongside the production app. If a required value is missing, or a value can't be used in that flavor, the app opens on a configuration page that says which.
 
 ### A phone that is not on USB: the dev tunnel
